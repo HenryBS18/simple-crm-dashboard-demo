@@ -28,23 +28,25 @@ npx next typegen  # regenerate PageProps/LayoutProps setelah menambah route
 |---|---|---|
 | `N8N_CRM_URL` | ya, untuk mode live | `https://n8n.withmiautomation.com/webhook/simple-crm-demo-api` |
 | `N8N_CRM_API_KEY` | ya, untuk mode live | Data table `crm_config` baris `api_key`. n8n Variable `CRM_API_KEY` menang kalau diisi. Hanya dibaca di server. |
-| `N8N_CRM_AI_URL` | tidak | Webhook `CRM AI Gateway`, mis. `https://n8n.withmiautomation.com/webhook/simple-crm-demo-ai`. Dipakai khusus action `ai.*`; API key-nya sama dengan di atas. Kalau kosong, hanya tab Agen AI yang memakai data contoh — papan tetap live. |
-| `NEXT_PUBLIC_DEMO_MODE` | tidak | `true` memaksa data contoh. Biarkan `true` sampai dua nilai di atas terisi. |
-| `CRM_MOCK_FAIL` | tidak | Khusus pengembangan. Isi nama action, mis. `leads.move`, untuk memaksa action itu gagal — dipakai menguji rollback optimistic. |
+| `N8N_CRM_AI_URL` | tidak | Webhook `CRM AI Gateway`, mis. `https://n8n.withmiautomation.com/webhook/simple-crm-demo-ai`. Dipakai khusus action `ai.*`; API key-nya sama dengan di atas. Kalau kosong, tab Agen AI membalas 503. |
+| `N8N_CRM_RESET_URL` | tidak | Webhook `CRM Demo Reset`, mis. `https://n8n.withmiautomation.com/webhook/simple-crm-demo-reset`. Dipakai khusus action `demo.reset`; API key-nya sama dengan di atas. Kalau kosong, tombol Reset membalas 503. |
 
 ## Mode demo
 
-Aplikasi memakai data contoh kalau `NEXT_PUBLIC_DEMO_MODE=true`, **atau** env n8n
-kosong, **atau** n8n gagal dihubungi (timeout 8 detik, error jaringan, 5xx,
-respons di luar kontrak). Jadi papan tidak pernah kosong waktu presentasi
-meskipun backend mati di tengah jalan.
+Dashboard ini tidak punya data contoh di frontend — satu-satunya sumber data
+adalah n8n. Kalau `N8N_CRM_URL`, `N8N_CRM_API_KEY` belum diisi, atau n8n gagal
+dihubungi (timeout 8 detik, error jaringan, 5xx, respons di luar kontrak),
+`app/api/crm/route.ts` membalas `503 BACKEND_UNAVAILABLE` — bukan papan yang
+diam-diam terisi data palsu. Action `ai.*` dan `demo.reset` masing-masing
+gagal 503 sendiri-sendiri kalau `N8N_CRM_AI_URL` atau `N8N_CRM_RESET_URL`
+kosong, tanpa mematikan papan utama.
 
-Sumber data dikirim balik lewat header `x-crm-source: mock | n8n` — bukan lewat
-body, supaya kontrak `{ ok, data, meta }` tidak berubah. Header itu yang
-menyalakan badge "Data contoh" di header aplikasi.
-
-Data contoh bersifat stateful di memori server: tambah lead, pindah kolom, ganti
-owner, dan tulis catatan semuanya bekerja. State-nya hilang saat server restart.
+Data demo di n8n dikembalikan lewat tombol Reset di topbar (aksi
+`demo.reset`). Reset ini menghapus seluruh baris `crm_leads`, `crm_activities`,
+`crm_sales`, `crm_prospects`, `crm_ai_tasks`, lalu menanam ulang dari tabel
+seed di n8n — 10 lead, 4 sales, 26 activity, 24 prospek berstatus `new`, dan
+antrian tugas agen kosong. Konfirmasi ketik ulang "RESET" divalidasi dua
+lapis: zod di klien dan Code node di workflow n8n.
 
 ## Agen AI
 
@@ -62,8 +64,8 @@ sendiri, dan ketiganya menulis ke lead yang sama dengan papan:
    sudah terisi. Tombol kirimnya tetap ditekan manusia.
 
 **Tidak ada LLM di sini.** Skoring dan pemilihan template deterministik, dan
-kernelnya ada di `lib/ai-rules.ts` — satu berkas yang juga disalin ke tiap Code
-node di workflow n8n. Konsekuensinya setiap keluaran **membawa alasannya
+kernelnya kini hanya hidup di tiap Code node workflow n8n (`CRM AI Gateway`) —
+tidak ada salinannya lagi di frontend. Konsekuensinya setiap keluaran **membawa alasannya
 sendiri**, mengikuti pola `classify_reason` yang sudah ada: skor prospek punya
 `scoreReason`, tiap usulan punya `reason`, tiap draf menyebut template dan data
 yang dipakainya. Titik tukar ke LLM asli nanti cuma satu node di n8n — kontrak
@@ -96,21 +98,19 @@ app/
   leads/[id]/page.tsx     detail yang bisa di-share (params adalah Promise)
   sales/page.tsx          kelola sales (tambah, ubah, aktif/nonaktif)
   agent/page.tsx          tab Agen AI: prospektor + antrian persetujuan
-  api/crm/route.ts        proxy ke n8n + fallback data contoh
+  api/crm/route.ts        proxy ke n8n, 503 jujur kalau backend mati
 components/
   agent/                  prospektor, tabel kandidat, antrian, dialog draf WA
   board/                  papan, kolom, kartu, menu "Pindahkan ke"
   lead/                   panel detail (dipakai drawer dan halaman), modal tambah lead
   leads/                  tabel
   sales/                  tabel sales + dialog tambah/ubah
-  shell/                  topbar, filter, strip angka, badge segmen
+  shell/                  topbar, filter, strip angka, dialog reset demo
   ui/                     shadcn
 lib/
-  ai-rules.ts             otak agen: kolam prospek, skoring, template, heuristik
   schema.ts               zod: entitas + payload/data tiap action (sumber tipe)
   crm.ts                  callCrm<A> terketik + wrapper per action
   n8n.ts                  server-only, satu-satunya pembaca API key
-  mock.ts                 data contoh stateful, 21 action
   queries.ts              hook TanStack Query + mutation optimistic
   filters.ts, format.ts, stage.ts
 ```

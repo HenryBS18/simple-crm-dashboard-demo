@@ -1,5 +1,14 @@
 import { z } from "zod";
-import type { AiTaskKind, AiTaskStatus, FollowupGoal } from "@/lib/ai-rules";
+
+/* Dulu di lib/ai-rules.ts. Kernel aturannya kini hanya hidup di n8n; tiga
+   tipe ini tetap dibutuhkan untuk mengunci literal di ACTIONS. */
+export type AiTaskKind = "prospect_batch" | "followup" | "stage_move";
+export type AiTaskStatus = "pending" | "approved" | "rejected" | "failed";
+export type FollowupGoal =
+  | "perkenalan"
+  | "tindak_lanjut_penawaran"
+  | "repeat_order"
+  | "reaktivasi";
 
 /* ── Primitif toleran ──────────────────────────────────────────────────────
    n8n Data Table gampang mengembalikan angka/boolean sebagai string. Skema
@@ -244,9 +253,10 @@ const statsSummaryData = z.object({
 });
 
 /* ── Agen AI ───────────────────────────────────────────────────────────────
-   Daftar literalnya dikunci ke tipe di `lib/ai-rules.ts` lewat `satisfies`,
-   jadi menambah goal atau jenis tugas di sana tanpa memperbarui skema ini
-   akan gagal saat build, bukan diam-diam lolos ke runtime.                  */
+   Daftar literalnya dikunci ke tipe `AiTaskKind`/`AiTaskStatus`/`FollowupGoal`
+   di atas lewat `satisfies`, jadi menambah goal atau jenis tugas tanpa
+   memperbarui skema ini akan gagal saat build, bukan diam-diam lolos ke
+   runtime.                                                                  */
 
 const aiTaskKinds = [
   "prospect_batch",

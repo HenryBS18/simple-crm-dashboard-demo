@@ -37,10 +37,6 @@ export function n8nConfigured(action: string): boolean {
   return Boolean(urlFor(action) && process.env.N8N_CRM_API_KEY);
 }
 
-export function demoModeForced(): boolean {
-  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-}
-
 export async function callN8n(
   action: string,
   payload: unknown,

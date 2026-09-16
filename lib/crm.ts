@@ -16,40 +16,6 @@ export class CrmError extends Error {
   }
 }
 
-/* ── Penanda sumber data ───────────────────────────────────────────────────
-   Route handler mengirim `x-crm-source` di setiap balasan. Nilainya disimpan
-   di store kecil ini supaya badge "Data contoh" jujur bukan cuma saat
-   NEXT_PUBLIC_DEMO_MODE menyala, tapi juga saat n8n mati di tengah demo.   */
-
-export type CrmSource = "mock" | "n8n" | "unknown";
-
-let currentSource: CrmSource = "unknown";
-let fallbackReason = "";
-const listeners = new Set<() => void>();
-
-function setSource(source: CrmSource, reason: string) {
-  if (source === currentSource && reason === fallbackReason) return;
-  currentSource = source;
-  fallbackReason = reason;
-  for (const listener of listeners) listener();
-}
-
-export const crmSourceStore = {
-  subscribe(listener: () => void) {
-    listeners.add(listener);
-    return () => listeners.delete(listener);
-  },
-  getSnapshot(): CrmSource {
-    return currentSource;
-  },
-  getServerSnapshot(): CrmSource {
-    return "unknown";
-  },
-  getFallbackReason(): string {
-    return fallbackReason;
-  },
-};
-
 /* ── Client terketik ─────────────────────────────────────────────────────── */
 
 export async function callCrm<A extends CrmAction>(
@@ -61,18 +27,6 @@ export async function callCrm<A extends CrmAction>(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ action, payload }),
   });
-
-  // Badge "Data contoh" bicara soal sumber papan, bukan tab Agen AI. Kedua
-  // gateway bisa hidup terpisah, jadi kalau `ai.*` ikut menulis ke store ini
-  // badge akan berkedip tiap antrian di-poll padahal papan sedang live.
-  if (!action.startsWith("ai.")) {
-    const header = response.headers.get("x-crm-source");
-    const reasonHeader = response.headers.get("x-crm-fallback-reason");
-    setSource(
-      header === "n8n" ? "n8n" : header === "mock" ? "mock" : "unknown",
-      reasonHeader ? decodeURIComponent(reasonHeader) : "",
-    );
-  }
 
   let body: unknown;
   try {
