@@ -1,26 +1,163 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Aplikasi ini light-only: demo dijalankan di ruang terang lewat proyektor.
+   Variant `dark:` sengaja diikat ke selector `.dark` yang tidak pernah dipasang,
+   supaya kelas dark bawaan shadcn mati total tanpa harus dihapus satu per satu. */
+@custom-variant dark (&:is(.dark *));
+
+/* ── Token brand ──────────────────────────────────────────────────────────
+   Kode segmen mengikuti sistem warna klien: hijau B2B, biru B2C.
+   Signal hanya untuk kondisi yang butuh tindakan, bukan dekorasi.          */
+@theme {
+  --color-ink: #131a19;
+  --color-ink-soft: #5a6664;
+  --color-paper: #ffffff;
+  --color-surface: #f3f5f4;
+  --color-line: #dce2df;
+  --color-line-strong: #b8c2be;
+  --color-b2b: #1f6f5c;
+  --color-b2c: #1b5fb0;
+  --color-signal: #b4432b;
 }
 
+/* Ukuran mikro ditulis sebagai utility, bukan token `--text-*`.
+   tailwind-merge tidak mengenal skala kustom, jadi `text-micro` yang
+   digabung dengan `text-signal` lewat cn() akan dianggap sama-sama warna
+   dan salah satunya dibuang. Nama di luar namespace `text-` menghindarinya. */
+@utility type-micro {
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+
+/* ── Token semantik shadcn, dipetakan ke palet di atas ───────────────────── */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-geist-sans);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --background: #ffffff;
+  --foreground: #131a19;
+  --card: #ffffff;
+  --card-foreground: #131a19;
+  --popover: #ffffff;
+  --popover-foreground: #131a19;
+  --primary: #131a19;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f5f4;
+  --secondary-foreground: #131a19;
+  --muted: #f3f5f4;
+  --muted-foreground: #5a6664;
+  --accent: #f3f5f4;
+  --accent-foreground: #131a19;
+  --destructive: #b4432b;
+  --border: #dce2df;
+  --input: #dce2df;
+  /* Focus ring memakai hijau B2B supaya jejak keyboard jelas dan on-brand. */
+  --ring: #1f6f5c;
+  --radius: 2px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Angka sejajar di mana pun digit perlu dibandingkan sekilas. */
+  .font-mono,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Fokus keyboard sengaja ditulis TANPA @layer. CSS tak berlapis menang atas
+   seluruh cascade layer, termasuk utility `outline-none` milik shadcn dan
+   ring-nya yang di sini menghasilkan garis putih di atas latar putih.
+   Hasilnya satu perlakuan fokus yang sama dan selalu terlihat di semua
+   elemen: kartu, tombol ikon, field, dan menu. */
+:focus-visible {
+  outline: 2px solid var(--color-b2b);
+  outline-offset: 2px;
+}
+
+/* ── Motion ───────────────────────────────────────────────────────────────
+   Hanya untuk menjelaskan perubahan: kartu mendarat, panel masuk,
+   hasil kategorisasi muncul.                                              */
+@keyframes card-land {
+  from {
+    background-color: color-mix(in srgb, var(--color-b2b) 14%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@keyframes tag-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-card-land {
+  animation: card-land 140ms ease-out;
+}
+
+.animate-tag-settle {
+  animation: tag-settle 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore-start lint/complexity/noImportantStyles: reset prefers-reduced-motion harus menang atas durasi milik komponen */
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+    /* biome-ignore-end lint/complexity/noImportantStyles: reset selesai */
+  }
 }

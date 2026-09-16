@@ -1,14 +1,12 @@
 import { Suspense } from "react";
-import { Board } from "@/components/board/board";
+import { LeadsTable } from "@/components/leads/leads-table";
 import { Workspace } from "@/components/shell/workspace";
 
-export default function BoardPage() {
+export default function LeadsPage() {
   return (
-    // useSearchParams butuh batas Suspense; filter dan kartu yang terbuka
-    // keduanya dibaca dari URL.
     <Suspense fallback={<div className="flex-1 bg-paper" />}>
       <Workspace>
-        <Board />
+        <LeadsTable />
       </Workspace>
     </Suspense>
   );

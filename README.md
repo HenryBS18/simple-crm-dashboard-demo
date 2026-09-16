@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CRM — dashboard demo
 
-## Getting Started
+Papan kanban lead dan panel detail kontak untuk tim sales. Tidak punya database
+sendiri: satu-satunya sumber data adalah webhook n8n (`CRM API Gateway`), dan
+seluruh permintaan lewat route handler `app/api/crm/route.ts` supaya API key
+tidak pernah sampai ke browser. Kontrak backend ada di [`n8n/API.md`](n8n/API.md).
 
-First, run the development server:
+## Menjalankan
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # lalu isi N8N_CRM_API_KEY
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Perintah lain:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build     # build produksi, termasuk type check
+npm run lint      # Biome (bukan ESLint)
+npm run format    # Biome formatter
+npx next typegen  # regenerate PageProps/LayoutProps setelah menambah route
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment
 
-## Learn More
+| Variabel | Wajib | Keterangan |
+|---|---|---|
+| `N8N_CRM_URL` | ya, untuk mode live | `https://n8n.withmiautomation.com/webhook/simple-crm-demo-api` |
+| `N8N_CRM_API_KEY` | ya, untuk mode live | Data table `crm_config` baris `api_key`. n8n Variable `CRM_API_KEY` menang kalau diisi. Hanya dibaca di server. |
+| `NEXT_PUBLIC_DEMO_MODE` | tidak | `true` memaksa data contoh. Biarkan `true` sampai dua nilai di atas terisi. |
+| `CRM_MOCK_FAIL` | tidak | Khusus pengembangan. Isi nama action, mis. `leads.move`, untuk memaksa action itu gagal — dipakai menguji rollback optimistic. |
 
-To learn more about Next.js, take a look at the following resources:
+## Mode demo
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Aplikasi memakai data contoh kalau `NEXT_PUBLIC_DEMO_MODE=true`, **atau** env n8n
+kosong, **atau** n8n gagal dihubungi (timeout 8 detik, error jaringan, 5xx,
+respons di luar kontrak). Jadi papan tidak pernah kosong waktu presentasi
+meskipun backend mati di tengah jalan.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Sumber data dikirim balik lewat header `x-crm-source: mock | n8n` — bukan lewat
+body, supaya kontrak `{ ok, data, meta }` tidak berubah. Header itu yang
+menyalakan badge "Data contoh" di header aplikasi.
 
-## Deploy on Vercel
+Data contoh bersifat stateful di memori server: tambah lead, pindah kolom, ganti
+owner, dan tulis catatan semuanya bekerja. State-nya hilang saat server restart.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Peta kode
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+app/
+  page.tsx                papan kanban (layar utama)
+  leads/page.tsx          tabel lead
+  leads/[id]/page.tsx     detail yang bisa di-share (params adalah Promise)
+  sales/page.tsx          kelola sales (tambah, ubah, aktif/nonaktif)
+  api/crm/route.ts        proxy ke n8n + fallback data contoh
+components/
+  board/                  papan, kolom, kartu, menu "Pindahkan ke"
+  lead/                   panel detail (dipakai drawer dan halaman), modal tambah lead
+  leads/                  tabel
+  sales/                  tabel sales + dialog tambah/ubah
+  shell/                  topbar, filter, strip angka, badge segmen
+  ui/                     shadcn
+lib/
+  schema.ts               zod: entitas + payload/data tiap action (sumber tipe)
+  crm.ts                  callCrm<A> terketik + wrapper per action
+  n8n.ts                  server-only, satu-satunya pembaca API key
+  mock.ts                 data contoh stateful, 12 action
+  queries.ts              hook TanStack Query + mutation optimistic
+  filters.ts, format.ts, stage.ts
+```
+
+Catatan teknis:
+
+- Kolom kanban dirender dari urutan `stages` yang dikembalikan `bootstrap`,
+  tidak di-hardcode. Labelnya dipaksa ke label klien lewat `lib/stage.ts`.
+- Seluruh papan hidup dari satu panggilan `leads.list` (limit 100) di satu entri
+  cache. Filter, pencarian, dan pembagian kolom dikerjakan di client.
+- Filter dan kartu yang sedang terbuka disimpan di URL (`?seg=&sales=&q=&lead=`)
+  supaya link bisa dibagikan saat demo.
+- Lint memakai **Biome**, bukan ESLint. `next lint` tidak ada lagi di Next 16.
+- Sales tidak bisa dihapus — kontrak n8n tidak punya `sales.delete` dan baris data
+  table tidak bisa dibuang lewat API. Yang tersedia cuma status Aktif/Nonaktif.
+  Sales nonaktif tidak pernah kebagian penugasan otomatis.
