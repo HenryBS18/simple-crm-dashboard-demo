@@ -939,7 +939,13 @@ Lalu uji penolakan:
 curl -s -X POST http://localhost:3000/api/crm -H 'content-type: application/json' \
   -d '{"action":"demo.reset","payload":{"confirm":"ya"}}'
 ```
-Expected: `ok: false`, `VALIDATION_ERROR` — ditolak zod di `lib/schema.ts` sebelum menyentuh jaringan.
+Expected: `ok: false`, `VALIDATION_ERROR`.
+
+Penolakannya datang dari **n8n**, bukan dari zod di klien. `app/api/crm/route.ts`
+hanya memvalidasi bentuk amplop `{action, payload}`, tidak pernah mencocokkan
+payload dengan `ACTIONS[action].payload` — perilaku lama yang berlaku untuk
+kedua puluh action, bukan sesuatu yang diperkenalkan task ini. Justru penjaga di
+n8n yang load-bearing: itu yang tidak bisa dilewati lewat curl.
 
 - [ ] **Step 7: Format, lint, commit**
 
