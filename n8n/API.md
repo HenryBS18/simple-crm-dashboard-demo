@@ -562,3 +562,120 @@ uji dengan alur di README bagian "Agen AI". Restart `next dev` setelah mengubah
 Penanda tembus-tidaknya adalah header `x-crm-source` dari `app/api/crm/route.ts`:
 `n8n` berarti live, `mock` berarti jatuh ke data contoh dan alasannya ada di
 `x-crm-fallback-reason`.
+
+---
+
+# CRM Demo Reset — endpoint ketiga
+
+> **Status: sudah di-deploy dan aktif.** Workflow `CRM Demo Reset`
+> (`mLydCvrc0jDlUuaK`, 26 node) berjalan di project Demo Prototype dari sumber
+> [`n8n/demo-reset.workflow.js`](demo-reset.workflow.js). Auth dan envelope-nya
+> salinan persis `CRM API Gateway` — kunci API yang sama, URL yang berbeda.
+
+## Endpoint
+
+```
+POST https://n8n.withmiautomation.com/webhook/simple-crm-demo-reset
+x-api-key: <crm_config.api_key>
+```
+
+## `demo.reset`
+
+Mengembalikan seluruh data demo ke keadaan awal: menghapus isi `crm_leads`,
+`crm_activities`, `crm_sales`, `crm_ai_tasks`, mengembalikan setiap baris
+`crm_prospects` ke `status: "new"`, lalu menyisipkan ulang dari tiga tabel
+seed.
+
+Request:
+
+```json
+{ "action": "demo.reset", "payload": { "confirm": "RESET" } }
+```
+
+`confirm` wajib bernilai persis `"RESET"`. Nilai lain ditolak dengan
+`VALIDATION_ERROR` **sebelum satu baris pun terhapus**:
+
+```json
+{ "ok": false, "error": { "code": "VALIDATION_ERROR", "message": "confirm harus bernilai \"RESET\"" }, "meta": { ... } }
+```
+
+Balasan sukses:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "seededAt": "2026-09-16T16:49:15.731Z",
+    "deleted": { "leads": 25, "activities": 49, "sales": 6, "prospects": 0, "aiTasks": 6 },
+    "inserted": { "leads": 10, "activities": 26, "sales": 4, "prospects": 24 }
+  },
+  "meta": { "requestId": "720508", "ts": "2026-09-16T16:49:16.646Z" }
+}
+```
+
+`deleted.prospects` **selalu 0**: prospek tidak pernah dihapus, hanya
+di-update. Jumlah prospek yang dikembalikan ke `new` muncul di
+`inserted.prospects`.
+
+## Tabel seed
+
+| Nama | ID | Baris |
+|---|---|---|
+| `crm_seed_sales` | `pNZch0ctkbvwHpfx` | 4 |
+| `crm_seed_leads` | `ZbQo7aPlufhcRdHC` | 10 |
+| `crm_seed_activities` | `1vQzBx0do5a3pjTw` | 26 |
+
+Ketiganya ditangkap dari keadaan live sekali oleh
+[`n8n/seed-capture.mjs`](seed-capture.mjs). Relasi disimpan sebagai **indeks,
+bukan ID**: `crm_seed_leads.owner_index` menunjuk `crm_seed_sales.seed_index`,
+dan `crm_seed_activities.lead_index` menunjuk `crm_seed_leads.seed_index`. ID
+baris asli tidak berarti apa-apa setelah tabel dikosongkan, jadi workflow
+memasangkan indeks itu ke ID baru berdasarkan **posisi** hasil insert — karena
+itu urutannya mengikat: sales dulu, lalu lead, lalu activity.
+
+Waktu juga disimpan sebagai offset (`created_minutes_ago`,
+`last_activity_minutes_ago`), bukan tanggal keras, dengan alasan yang sama
+seperti `crm_prospects.last_seen_days`: tanggal keras menua, dan sebulan lagi
+seluruh timeline demo akan berbunyi "sebulan lalu".
+
+## Tidak ada `crm_seed_prospects`
+
+Prospek **di-reset di tempat** dengan satu node `update`
+(`status: "new"`, `converted_lead_id: ""`, `converted_at: ""`), tidak pernah
+dihapus dan disisipkan ulang. Kolam prospek tidak punya tabel seed, jadi
+menghapusnya berarti kehilangannya selamanya.
+
+## Penjaga seed kosong
+
+`Plan Reset` membaca ketiga tabel seed dan menolak kalau `crm_seed_sales` atau
+`crm_seed_leads` kosong — **sebelum** penghapusan pertama. Workflow yang
+menghapus dulu lalu menemukan seed kosong meninggalkan demo kosong permanen,
+dan tidak ada cara memulihkannya.
+
+## `crm_config` tidak pernah disentuh
+
+Tidak ada node hapus atau update yang menunjuk `GlW1ROM8sSfdO7LA`. Node
+`Load Config` hanya membacanya untuk auth. Di sanalah `api_key` yang dipakai
+ketiga gateway tinggal; menghapusnya mematikan seluruh dashboard dan tidak ada
+backup yang memulihkan kredensial hidup dengan bersih.
+
+## Idempoten
+
+Menjalankan reset dua kali berturut-turut menghasilkan angka `inserted` yang
+sama persis. Data table n8n mengulang auto-increment dari 1 setelah tabelnya
+kosong, jadi ID baris pun identik antar-reset — bukan sesuatu yang dijanjikan
+kontrak, tapi berguna waktu demo.
+
+## Cara men-deploy ulang
+
+Sama seperti gateway lain: sunting `n8n/demo-reset.workflow.js`, lalu
+
+```
+n8n MCP → create_workflow_from_code
+  projectId: jybGqjoYSN755zQt   (Demo Prototype)
+  folderId:  Yek3LEEHwKm9Dyv9   (Demo Leads - Shabu Ajhi - Hnry)
+  code:      isi n8n/demo-reset.workflow.js
+```
+
+lalu `publish_workflow`. `folderId` wajib — alasannya sama seperti di bagian
+AI Gateway.
