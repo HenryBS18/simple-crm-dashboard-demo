@@ -70,7 +70,7 @@ Yang hilang: kalau seseorang menghapus baris `crm_prospects` secara manual, rese
 
 ## Task 1: Tabel seed di n8n, terisi dari keadaan live yang sudah dibersihkan
 
-Sasaran: tiga data table seed ada dan berisi 10 lead, 4 sales, 33 activity — keadaan live dikurangi jejak uji coba 2026-09-16.
+Sasaran: tiga data table seed ada dan berisi 10 lead, 4 sales, 26 activity — baris asli sebelum agen AI pernah dipakai.
 
 **Files:**
 - Create: `n8n/seed-capture.mjs`
@@ -111,14 +111,26 @@ Buat `n8n/seed-capture.mjs`. Skrip ini dijalankan sekali, hasilnya JSON yang dis
 
 ```js
 /* Sekali pakai: menangkap keadaan live jadi bentuk seed.
-   Jejak uji coba 2026-09-16 dibuang di sini — lead 12-19 beserta activity
-   `created` miliknya (35-42), plus activity 34 dan 43 di Ova Villa. */
+
+   Memakai ALLOWLIST, bukan daftar buang. Data live terus bertambah tiap kali
+   dashboard dipakai demo, jadi daftar buang berbasis ID langsung basi; daftar
+   simpan tidak. Yang disimpan adalah baris asli sebelum agen AI pernah dipakai:
+   lead 1-10 dan sales 1-4.
+
+   Semua lead id>=12 bersumber `canvassing` — tanda tangan approval prospek
+   agen — dan sales 5 (`Yoga`, nonaktif, 0 lead) serta 6 (`budi`, nomor tidak
+   ternormalisasi) muncul dari sesi demo. Tidak ada lead asli yang dimiliki
+   kedua sales itu, jadi membuangnya tidak meninggalkan lead yatim.
+
+   Activity milik lead yang tidak disimpan gugur dengan sendirinya karena
+   activity hanya dikumpulkan dari lead yang disimpan. Yang perlu dibuang
+   eksplisit hanya jejak agen pada lead yang DISIMPAN: activity 34 dan 43,
+   keduanya di Ova Villa. */
 const API = "http://localhost:3000/api/crm";
 
-const DROP_LEAD_IDS = new Set(["12","13","14","15","16","17","18","19"]);
-const DROP_ACTIVITY_IDS = new Set([
-  "34","35","36","37","38","39","40","41","42","43",
-]);
+const KEEP_LEAD_IDS = new Set(["1","2","3","4","5","6","7","8","9","10"]);
+const KEEP_SALES_IDS = new Set(["1","2","3","4"]);
+const DROP_ACTIVITY_IDS = new Set(["34", "43"]);
 /* Ova Villa dipindahkan agen saat uji coba; stage aslinya todo. */
 const STAGE_OVERRIDE = { "1": "todo" };
 
@@ -134,11 +146,13 @@ async function call(action, payload = {}) {
 }
 
 const salesData = await call("sales.list");
-const salesRows = salesData.items ?? salesData;
+/* Kontrak sales.list memakai kunci `sales` (lihat n8n/API.md), bukan `items`. */
+const allSales = salesData.sales ?? salesData.items ?? salesData;
+const salesRows = allSales.filter((s) => KEEP_SALES_IDS.has(String(s.id)));
 
 const leadsData = await call("leads.list");
 const allLeads = leadsData.items ?? leadsData;
-const leads = allLeads.filter((l) => !DROP_LEAD_IDS.has(String(l.id)));
+const leads = allLeads.filter((l) => KEEP_LEAD_IDS.has(String(l.id)));
 
 /* Activity diambil per lead; leads.list tidak membawanya. */
 const activities = [];
@@ -227,9 +241,9 @@ Run:
 node n8n/seed-capture.mjs > /tmp/seed.json
 ```
 
-Expected di stderr: `sales=4 leads=10 activities=33`
+Expected di stderr: `sales=4 leads=10 activities=26`
 
-Kalau `leads` bukan 10 atau `activities` bukan 33, **berhenti** — artinya keadaan live berbeda dari asumsi dan daftar jejak uji di skrip perlu ditinjau ulang sebelum apa pun disisipkan.
+Kalau `leads` bukan 10 atau `activities` bukan 26, **berhenti** — artinya keadaan live berbeda dari asumsi dan daftar jejak uji di skrip perlu ditinjau ulang sebelum apa pun disisipkan.
 
 Periksa juga tidak ada `owner_index: 0` atau `lead_index: 0` (nol berarti relasi gagal dipetakan):
 ```bash
@@ -741,7 +755,7 @@ curl -s -X POST https://n8n.withmiautomation.com/webhook/simple-crm-demo-reset \
   -H 'content-type: application/json' -H "x-api-key: $KEY" \
   -d '{"action":"demo.reset","payload":{"confirm":"RESET"}}'
 ```
-Expected: `ok: true`, `inserted.leads` = 10, `inserted.sales` = 4, `inserted.activities` = 33, `inserted.prospects` = 24.
+Expected: `ok: true`, `inserted.leads` = 10, `inserted.sales` = 4, `inserted.activities` = 26, `inserted.prospects` = 24.
 
 - [ ] **Step 13: Verifikasi hasilnya**
 
@@ -776,7 +790,7 @@ print(d['lead']['name'], '->', len(d.get('activities',[])), 'activity')
 "
 done
 ```
-Expected: total activity seluruh lead = 33, dan tidak ada lead dengan 0 activity (tiap lead seed minimal punya activity `created`).
+Expected: total activity seluruh lead = 26, dan tidak ada lead dengan 0 activity (tiap lead seed minimal punya activity `created`).
 
 Verifikasi `lead_count`:
 
@@ -1211,7 +1225,7 @@ git commit -m "refactor: cabut mock dan kernel aturan dari frontend"
 
 - [ ] `npx biome check .` bersih
 - [ ] `npx next build` lolos
-- [ ] Reset dari UI mengembalikan 10 lead, 4 sales, 33 activity, 24 prospek `new`, 0 tugas agen
+- [ ] Reset dari UI mengembalikan 10 lead, 4 sales, 26 activity, 24 prospek `new`, 0 tugas agen
 - [ ] Reset dua kali berturut-turut menghasilkan angka identik
 - [ ] `demo.reset` dengan `confirm` salah ditolak di kedua lapis: zod di klien dan Code node di n8n
 - [ ] Tabel seed kosong → reset ditolak tanpa menghapus apa pun
