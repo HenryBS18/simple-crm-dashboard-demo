@@ -3,6 +3,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ResetDialog } from "@/components/shell/reset-dialog";
 import { useCrmSource } from "@/lib/queries";
 
 const VIEWS = [
@@ -62,7 +63,10 @@ export function Topbar({ children }: { children?: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">{children}</div>
+        <div className="ml-auto flex items-center gap-2">
+          {children}
+          <ResetDialog />
+        </div>
       </div>
     </header>
   );
