@@ -9,7 +9,7 @@ import {
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import * as crm from "@/lib/crm";
-import { crmSourceStore } from "@/lib/crm";
+import { CrmError, crmSourceStore } from "@/lib/crm";
 import type { DataOf, Lead, PayloadOf } from "@/lib/schema";
 
 export const keys = {
@@ -301,6 +301,156 @@ export function useCreateActivity() {
     },
     onError: () => {
       toast.error("Catatan belum terkirim. Coba simpan lagi.");
+    },
+  });
+}
+
+/* ── Agen AI ───────────────────────────────────────────────────────────────
+   Tab agen menulis ke lead yang sama dengan papan, jadi tiap keputusan yang
+   disetujui harus membatalkan cache papan — kalau tidak, kartu barunya baru
+   muncul setelah pindah tab dan demo terlihat tidak nyambung.            */
+
+export const aiKeys = {
+  bootstrap: ["ai", "bootstrap"] as const,
+  tasks: ["ai", "tasks"] as const,
+};
+
+export function useAiBootstrap() {
+  return useQuery({
+    queryKey: aiKeys.bootstrap,
+    queryFn: crm.aiBootstrap,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useAiTasks() {
+  return useQuery({
+    queryKey: aiKeys.tasks,
+    queryFn: () => crm.listAiTasks({}),
+  });
+}
+
+/** Pencarian adalah mutation, bukan query: hasilnya milik satu penekanan
+    tombol dan tidak boleh diambil ulang sendiri di tengah presentasi. */
+export function useProspectSearch() {
+  return useMutation({
+    mutationFn: (payload: PayloadOf<"ai.prospect.search">) =>
+      crm.searchProspects(payload),
+    onError: (error) => {
+      toast.error(
+        error instanceof CrmError
+          ? error.message
+          : "Agen gagal menelusuri prospek. Coba jalankan lagi.",
+      );
+    },
+  });
+}
+
+export function useGenerateAiTasks() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: PayloadOf<"ai.tasks.generate">) =>
+      crm.generateAiTasks(payload),
+    onSuccess: (data) => {
+      client.invalidateQueries({ queryKey: aiKeys.tasks });
+      client.invalidateQueries({ queryKey: aiKeys.bootstrap });
+      // Nol usulan baru adalah hasil yang sah, bukan kegagalan: antrian sudah
+      // mencakup semua yang perlu ditindak. Tanpa kalimat ini tombolnya
+      // terlihat rusak.
+      if (data.created === 0) {
+        toast.info(
+          data.skipped > 0
+            ? `Tidak ada usulan baru — ${data.skipped} usulan yang sama sudah mengantri.`
+            : "Tidak ada lead yang perlu ditindak saat ini.",
+        );
+        return;
+      }
+      toast.success(`${data.created} usulan baru masuk antrian`);
+    },
+    onError: () => {
+      toast.error("Agen gagal menyusun usulan. Coba lagi.");
+    },
+  });
+}
+
+export function useCreateAiTask() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: PayloadOf<"ai.tasks.create">) =>
+      crm.createAiTask(payload),
+    onSuccess: (data) => {
+      client.invalidateQueries({ queryKey: aiKeys.tasks });
+      client.invalidateQueries({ queryKey: aiKeys.bootstrap });
+      toast[data.duplicate ? "info" : "success"](
+        data.duplicate
+          ? "Usulan yang sama sudah ada di antrian"
+          : "Usulan masuk antrian, menunggu persetujuan",
+      );
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof CrmError
+          ? error.message
+          : "Usulan gagal dibuat. Coba lagi.",
+      );
+    },
+  });
+}
+
+export function useDecideAiTask() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: PayloadOf<"ai.tasks.decide">) =>
+      crm.decideAiTask(payload),
+
+    onSuccess: (data) => {
+      client.invalidateQueries({ queryKey: aiKeys.tasks });
+      client.invalidateQueries({ queryKey: aiKeys.bootstrap });
+
+      // Efek yang gagal dibalas 200 dengan status "failed" supaya barisnya
+      // sendiri jadi catatan kegagalan. Toast-nya tetap harus keras.
+      if (data.task.status === "failed") {
+        const error = (data.result as { error?: { message?: string } } | null)
+          ?.error;
+        toast.error(error?.message ?? "Tindakan gagal dijalankan");
+        return;
+      }
+
+      if (data.task.status === "rejected") {
+        toast.info("Usulan ditolak");
+        return;
+      }
+
+      // Semua efek yang disetujui menyentuh lead, jadi papan dan detail ikut
+      // dibatalkan tanpa pandang jenis tugasnya.
+      client.invalidateQueries({ queryKey: keys.leads });
+      client.invalidateQueries({ queryKey: keys.bootstrap });
+      if (data.task.leadId) {
+        client.invalidateQueries({ queryKey: keys.lead(data.task.leadId) });
+      }
+    },
+
+    onError: (error) => {
+      toast.error(
+        error instanceof CrmError
+          ? error.message
+          : "Keputusan gagal dijalankan. Coba lagi.",
+      );
+    },
+  });
+}
+
+export function useDraftFollowup() {
+  return useMutation({
+    mutationFn: (payload: PayloadOf<"ai.draft.followup">) =>
+      crm.draftFollowup(payload),
+    onError: (error) => {
+      toast.error(
+        error instanceof CrmError ? error.message : "Draf gagal disusun.",
+      );
     },
   });
 }

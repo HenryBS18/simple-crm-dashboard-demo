@@ -9,6 +9,7 @@ const VIEWS = [
   { href: "/", label: "Papan" },
   { href: "/leads", label: "Tabel" },
   { href: "/sales", label: "Sales" },
+  { href: "/agent", label: "Agen AI" },
 ] as const;
 
 function DemoBadge() {

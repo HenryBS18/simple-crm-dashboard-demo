@@ -261,3 +261,304 @@ Dipakai untuk demo input manual di depan klien:
  { "name": "Shauma", "phone": "0881-0221-32633", "address": "Pasir Salam, Regol", "orderCount": 1, "source": "meta_ads" }
 ]
 ```
+
+---
+
+# CRM AI Gateway — endpoint kedua
+
+> **Status: sudah di-deploy dan aktif.** Workflow `CRM AI Gateway`
+> (`FF6HJ35DQY08mQ4O`, 37 node) berjalan di project Demo Prototype dari sumber
+> [`n8n/ai-gateway.workflow.js`](ai-gateway.workflow.js). Ketujuh action `ai.*`
+> dilayani n8n selama `N8N_CRM_AI_URL` terisi di `.env.local`; kalau kosong
+> atau webhook-nya mati, action `ai.*` jatuh ke `lib/mock.ts` — itu perilaku
+> yang memang dirancang, bukan kegagalan.
+>
+> Dua hal yang baru ketahuan saat deploy, keduanya sudah diperbaiki di sumber:
+>
+> 1. **SDK n8n adalah DSL deklaratif.** Deklarasi `function` *dan* arrow
+>    function ditolak parser, jadi `.map()`/`.reduce()` pembangun schema ikut
+>    ditolak. Semua pabrik node dan schema kini ditulis literal.
+> 2. **Node dataTable berjalan sekali per item masuk.** Karena keempat pembaca
+>    dirantai seri, tanpa `executeOnce: true` tiap tabel terbaca berulang —
+>    10 lead x 33 activity x 24 prospek menghasilkan 8712 baris prospek palsu,
+>    dedupe nomor melar, dan satu request makan 45 detik. Dengan `executeOnce`
+>    angkanya kembali 24 dan request selesai di bawah satu detik.
+>
+> Contoh respons di bawah **diambil dari eksekusi `lib/mock.ts`**, bukan dari
+> n8n. Keduanya memakai kernel aturan yang sama (`lib/ai-rules.ts`), jadi
+> bentuknya identik — tapi ini perlu disebut supaya janji "semua contoh dari
+> eksekusi nyata" di atas tidak jadi bohong.
+
+## Kenapa gateway terpisah
+
+`CRM API Gateway` berukuran ~100 ribu karakter JSON dan menopang seluruh papan.
+Menambah cabang ke dalamnya lewat API berarti menulis ulang seluruh workflow
+untuk perubahan yang sifatnya menambah saja — kalau gagal, ke-13 action lama
+ikut mati. Karena itu action agen dilayani workflow kedua dengan webhook
+sendiri:
+
+```
+POST https://n8n.withmiautomation.com/webhook/simple-crm-demo-ai
+Content-Type: application/json
+x-api-key: <API_KEY>
+```
+
+Kunci API, envelope, dan kode `Auth & Parse` / `Format Response`-nya **salinan
+persis** milik gateway lama. Satu kunci, dua URL. Dashboard memilih URL dari
+prefiks action di `lib/n8n.ts`: action berawalan `ai.` ke `N8N_CRM_AI_URL`,
+sisanya ke `N8N_CRM_URL`.
+
+Konsekuensi yang memang diinginkan: kalau `N8N_CRM_AI_URL` kosong atau
+workflow-nya mati, **hanya tab Agen AI** yang jatuh ke data contoh. Papan
+kanban tetap live.
+
+## Batas tulis
+
+AI Gateway memiliki `crm_prospects` dan `crm_ai_tasks`. Untuk menyentuh lead:
+
+| Efek | Caranya |
+|---|---|
+| Membuat lead | `executeWorkflow` ke `CRM Lead Intake` (`kEy4STOjkUNhQTGv`) — dedup nomor, kategorisasi B2B/B2C, dan round-robin sudah matang di sana |
+| Mencatat activity | Insert langsung ke `crm_activities` |
+| Memindahkan stage | Update `crm_leads`, **hanya** kolom `stage`, `last_activity_at`, `is_stale`, `updated_at` |
+
+Tidak ada HTTP self-call ke gateway lama: `CRM Lead Intake` bertrigger
+`executeWorkflowTrigger` dengan `inputSource: 'passthrough'`, jadi bisa
+dipanggil langsung. Satu eksekusi, bukan dua.
+
+## Sumber lead prospek adalah `canvassing`
+
+Node `Plan Intake` punya `VALID_SOURCES` dan **menulis ulang sumber tak dikenal
+menjadi `manual` tanpa error**. Jadi sumber karangan seperti `ai_prospect` akan
+hilang diam-diam. Prospek memakai `canvassing`, dan jejak asal-usulnya ditaruh
+di `notes`:
+
+```
+Prospek dari agen AI — Direktori Villa Bandung Raya, rating 4,7 (186 ulasan), 14 unit sewa, skor 91/100.
+```
+
+## Konvensi nomor telepon kolam prospek
+
+24 baris memakai `0800-1000-0001` … `0800-1000-0024` → `6280010000001` dst.
+
+Nomor seluler Indonesia ada di `0811`–`0859` dan `0877`–`0899`; mengarang di
+sana berisiko mengenai orang sungguhan. **`0800` adalah rentang bebas-pulsa
+yang tidak pernah menjadi nomor seluler**, jadi `wa.me/6280010000012` dijamin
+menjawab "nomor tidak terdaftar di WhatsApp". Aman meskipun barisnya benar-benar
+masuk ke `crm_leads` dan tombol WhatsApp-nya diklik di depan klien. Blok ini
+berurutan dan monoton, jadi sekilas lihat pun ketahuan ini data contoh.
+
+## Tidak ada LLM
+
+Skoring, pemilihan template, dan heuristik usulan semuanya deterministik.
+Kernelnya ada di `lib/ai-rules.ts` dan disalin ke tiap Code node. Titik tukar
+ke LLM asli nanti cuma satu node — kontrak action di bawah tidak perlu berubah.
+
+## Ringkasan action
+
+| Action | Payload | Data |
+|---|---|---|
+| `ai.bootstrap` | `{}` | `{ areas[], categories[], goals[], taskKinds[], templates[], pool, tasks, scoring }` |
+| `ai.prospect.search` | `{ query?, area?, category?, limit?=12, includeUsed?=false, minScore?=0 }` | `{ runId, query, filters, total, returned, tookMs, sources[], steps[], candidates[] }` |
+| `ai.draft.followup` | `{ leadId, goal? }` | `{ lead, draft, alternatives[] }` |
+| `ai.tasks.list` | `{ status?, kind?, leadId?, limit?=50 }` | `{ items[], total, counts }` |
+| `ai.tasks.generate` | `{ kinds? }` | `{ runId, scanned, created, skipped, items[], skippedReasons[] }` |
+| `ai.tasks.create` | `{ kind, leadId?, prospectIds?, goal?, text?, stage?, note?, actor? }` | `{ task, duplicate }` |
+| `ai.tasks.decide` | `{ id, decision, actor?, overrides? }` | `{ task, result }` |
+
+### `ai.prospect.search`
+
+`steps[]` adalah tahap kerja beserta durasinya yang **diukur**, bukan dikarang —
+kalau log eksekusi n8n ikut ditunjukkan ke klien, angka di layar dan di log
+harus bercerita sama. Jeda antar langkah yang terlihat di UI dibuat di
+komponen, bukan di backend.
+
+```json
+{
+ "runId": "run_12345",
+ "query": "gathering rombongan",
+ "filters": { "area": "lembang", "category": "", "minScore": 0 },
+ "total": 6, "returned": 6, "tookMs": 3,
+ "sources": [{ "label": "Direktori Villa Bandung Raya", "count": 2 }],
+ "steps": [
+  { "key": "parse", "label": "Membaca permintaan", "detail": "kata kunci: gathering, rombongan · area Lembang", "count": null, "ms": 0 },
+  { "key": "pool", "label": "Membuka pool prospek", "detail": "24 baris di crm_prospects", "count": 24, "ms": 1 },
+  { "key": "filter", "label": "Menyaring area & kategori", "detail": "6 kandidat lolos filter", "count": 6, "ms": 0 },
+  { "key": "match", "label": "Mencocokkan kata kunci", "detail": "1 kandidat cocok dengan \"gathering rombongan\"", "count": 1, "ms": 1 },
+  { "key": "dedupe", "label": "Mencocokkan dengan CRM", "detail": "tidak ada nomor yang bentrok", "count": 0, "ms": 1 },
+  { "key": "score", "label": "Menilai kualitas listing", "detail": "skor rata-rata 75", "count": 6, "ms": 0 },
+  { "key": "rank", "label": "Mengurutkan hasil", "detail": "6 teratas ditampilkan", "count": 6, "ms": 0 }
+ ],
+ "candidates": [ /* lihat bawah */ ]
+}
+```
+
+Satu kandidat:
+
+```json
+{
+ "prospectId": "1",
+ "name": "Villa Kayu Lembang",
+ "category": "villa", "categoryLabel": "Villa",
+ "area": "lembang", "areaLabel": "Lembang",
+ "address": "Jl. Kolonel Masturi No. 112, Cisarua, Lembang",
+ "phone": "6280010000001", "phoneRaw": "0800-1000-0001",
+ "rating": 4.7, "reviewCount": 186, "unitCount": 14, "unitLabel": "14 unit sewa",
+ "priceBand": "premium", "priceNote": "Rp1,2jt–2,4jt / malam",
+ "sourceLabel": "Direktori Villa Bandung Raya",
+ "listingUrl": "https://direktori-villa-bandung-raya.example/l/1-villa-kayu-lembang",
+ "hasWhatsapp": true, "verified": true,
+ "lastSeenAt": "2026-09-12T12:41:18.000Z", "lastSeenLabel": "4 hari lalu",
+ "keywords": ["villa", "rombongan", "gathering", "kolam renang"],
+ "notes": "Kompleks 14 unit kayu, sering dipakai gathering kantor.",
+ "score": 91, "scoreTier": "prioritas tinggi",
+ "scoreReason": "Rating 4,7 dari 186 ulasan, 14 unit sewa, harga kelas menengah-atas, nomor WhatsApp aktif, listing terverifikasi, listing diperbarui 4 hari lalu — skor 91/100, prioritas tinggi",
+ "scoreParts": [{ "key": "rating", "label": "Rating", "points": 25, "max": 25 }],
+ "matchScore": 2, "matchedOn": ["kata kunci: gathering", "kata kunci: rombongan"],
+ "status": "new", "alreadyInCrm": false, "existingLeadId": "",
+ "leadDraft": { "name": "Villa Kayu Lembang", "phone": "0800-1000-0001", "address": "…", "source": "canvassing", "notes": "Prospek dari agen AI — …" }
+}
+```
+
+**Skor tidak tergantung kueri.** Prospek yang skornya berubah antara dua
+pencarian terbaca seperti bug. Relevansi terhadap kueri adalah `matchScore`
+terpisah yang hanya memengaruhi urutan.
+
+Bobot (total 100): rating 25, jumlah ulasan 20, skala usaha 20, kelas harga 15,
+kanal WhatsApp 10, listing terverifikasi 5, kesegaran listing 5.
+Tier: ≥80 prioritas tinggi · 60–79 layak dihubungi · 40–59 cadangan · <40 lewati dulu.
+
+Urutan: `matchScore` desc → `score` desc → `reviewCount` desc → nama asc.
+
+Error: `VALIDATION_ERROR` kalau `area` atau `category` tidak dikenal (pesannya
+menyebutkan pilihan yang sah). `limit` dijepit diam-diam ke 1..24.
+
+### `ai.draft.followup`
+
+Goal dipilih berurutan, dan urutannya disebut apa adanya di `reason` supaya
+pilihannya bisa dibantah:
+
+1. `stage = in_progress` dan ≥7 hari diam → `reaktivasi`
+2. `order_count > 0` → `repeat_order`
+3. `stage = in_progress` → `tindak_lanjut_penawaran`
+4. selain itu → `perkenalan`
+
+```json
+{
+ "draft": {
+  "templateId": "wa_reaktivasi_v1",
+  "goal": "reaktivasi", "goalLabel": "Reaktivasi", "channel": "wa",
+  "text": "Selamat siang, Kak Shauma. Saya Fajar dari WithMi.\nSaya cek catatan kami, obrolan terakhir kita 9 hari lalu…",
+  "reason": "Lead ada di In Progress, 9 hari tanpa aktivitas, sudah 1x order — dipakai template reaktivasi",
+  "waUrl": "https://wa.me/6288102213263?text=Selamat%20siang…",
+  "vars": { "waktu": "siang", "sapaan": "Kak Shauma", "sales": "Fajar", "jeda_hari": 9 }
+ },
+ "alternatives": [{ "goal": "perkenalan", "goalLabel": "Perkenalan" }]
+}
+```
+
+Tidak menulis apa pun. Jam sapaan dihitung WIB dari epoch
+(`(Date.now()/3600000 + 7) % 24`), **bukan** `new Date().getHours()` — setelan
+`timezone` workflow tidak memengaruhi `new Date()` di dalam Code node, dan
+salah di sini menghasilkan "Selamat pagi" pukul sembilan malam.
+
+Lead tanpa sales memakai pembuka berbeda ("Saya dari tim WithMi"), bukan nama
+sales yang ditambal frasa umum.
+
+Error: `NOT_FOUND` kalau lead tidak ada atau sudah diarsipkan;
+`VALIDATION_ERROR` kalau `goal` tidak dikenal atau nomor WhatsApp-nya tidak valid.
+
+### `ai.tasks.generate`
+
+Memindai lead yang sudah ada. Tiga keluarga aturan:
+
+**Follow-up** (maks 6/run) — `stage ∈ {todo, in_progress}` **dan**
+(`is_stale = true` **atau** ≥3 hari diam). Bagian `atau` itu penting:
+`CRM Stale Detector` hanya jalan pukul 08:00 WIB, jadi lead yang baru saja jadi
+basi masih berbendera `false` dan antrian akan kosong saat demo siang hari.
+Prioritas `min(100, 40 + hari×6 + (order>0 ? 10 : 0) + (B2B ? 10 : 0))`.
+
+**Pindah stage** (maks 4/run):
+
+| | Syarat | Usul | Prioritas |
+|---|---|---|---|
+| S1 | `todo` dan ≥1 activity `call`/`wa`/`visit` | → `in_progress` | 70 |
+| S2 | `in_progress`, `order_count ≥ 1`, ada catatan mengandung transfer/dp/lunas/closing/invoice | → `won` | 80 |
+| S3 | `in_progress` dan ≥14 hari tanpa respons | → `lost` | 55 |
+
+S2 satu-satunya aturan yang membaca isi catatan bebas. Potongan kalimatnya ikut
+dikutip di `reason` supaya operator bisa menilai sendiri apakah tebakannya
+masuk akal. S3 adalah usulan yang merusak — justru itu alasan antrian
+persetujuan ini ada.
+
+**Prospek baru** (maks 1/run) — kalau ada ≥3 prospek berstatus `new` dengan skor
+≥70, ambil 8 teratas.
+
+**Dedup:** dilewati kalau ada tugas `pending` dengan `dedupe_key` sama, atau
+yang `approved` kurang dari 24 jam lalu. Akibatnya **klik "Cari usulan" yang
+kedua memang mengembalikan `created: 0`** — UI harus menyatakan itu, bukan diam
+saja.
+
+### `ai.tasks.decide`
+
+`overrides.text` dipakai untuk draf yang disunting operator. Tanpa itu,
+activity yang tercatat tidak sama dengan pesan yang benar-benar dikirim.
+
+Hasil per jenis: `prospect_batch` mengembalikan bentuk yang sama dengan
+`leads.bulkCreate` plus `categorizations`, `assignments`, dan
+`convertedProspects`. Bedanya satu: **`invalid` di sini angka, dan daftarnya di
+`invalidItems`** — gateway lama mengirim `invalid` sebagai array padahal
+kontraknya angka, sehingga di dashboard selalu terbaca 0.
+
+**Efek yang gagal dibalas HTTP 200**, bukan error, dengan `task.status =
+"failed"` dan `result.error` terisi. Alasannya: kalau dibalas error, klien
+tidak tahu apakah baris tugasnya sudah berpindah, dan antrian harus diambil
+ulang untuk mencari tahu. Dengan cara ini barisnya sendiri yang menjadi catatan
+kegagalan.
+
+Error: `NOT_FOUND` (tugas tidak ada), `VALIDATION_ERROR` (`decision` bukan
+approve/reject, tugas sudah diputuskan, teks kosong).
+
+## Data table baru
+
+| Nama | ID |
+|---|---|
+| `crm_prospects` | `Bt4eJ0TOkiIhH8c9` — 24 baris, kolam prospek |
+| `crm_ai_tasks` | `yf9VcYN1Ym5bV9BL` — antrian persetujuan, mulai kosong |
+
+`crm_prospects` menyimpan **`last_seen_days` (angka), bukan tanggal**. Tanggal
+keras akan menua: dua bulan setelah seeding semua listing berbunyi "diperbarui
+3 bulan lalu" dan sinyal kesegaran mati diam-diam. Offset membuat kolam ini
+awet, dan membuat skor jadi fungsi murni dari barisnya — gampang diuji.
+
+Siklus tugas sengaja **empat** status, bukan lima: `pending → approved |
+rejected | failed`. Tidak ada `executing` karena `ai.tasks.decide` berjalan
+sinkron, dan mengarang status async yang tidak pernah dimasuki adalah cara
+demo berakhir dengan baris yang nyangkut selamanya.
+
+## Cara men-deploy ulang workflow-nya
+
+Sudah di-deploy sebagai `FF6HJ35DQY08mQ4O`. Untuk mengubahnya, sunting
+`n8n/ai-gateway.workflow.js` lalu deploy ulang dari file itu — jangan menambal
+hasil deploy-nya lewat n8n UI, karena file ini yang jadi sumber kebenaran.
+
+```
+n8n MCP → create_workflow_from_code
+  projectId: jybGqjoYSN755zQt   (Demo Prototype)
+  folderId:  Yek3LEEHwKm9Dyv9   (Demo Leads - Shabu Ajhi - Hnry)
+  code:      isi n8n/ai-gateway.workflow.js
+```
+
+**`folderId` wajib diisi.** Tanpa itu workflow mendarat di akar project, bukan
+di folder bersama ketiga workflow CRM lain. MCP n8n **tidak punya operasi pindah
+folder** — `folderId` hanya ada saat pembuatan, `update_workflow` tidak bisa
+mengubahnya — jadi salah folder cuma bisa dibetulkan dengan menyeretnya di UI
+atau membuat ulang workflow-nya (ID dan riwayat eksekusi ikut berganti).
+
+Lalu `publish_workflow`, pastikan `N8N_CRM_AI_URL` terisi di `.env.local`, dan
+uji dengan alur di README bagian "Agen AI". Restart `next dev` setelah mengubah
+`.env.local` — variabel sisi server dibaca saat server start.
+
+Penanda tembus-tidaknya adalah header `x-crm-source` dari `app/api/crm/route.ts`:
+`n8n` berarti live, `mock` berarti jatuh ke data contoh dan alasannya ada di
+`x-crm-fallback-reason`.

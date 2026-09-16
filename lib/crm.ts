@@ -62,12 +62,17 @@ export async function callCrm<A extends CrmAction>(
     body: JSON.stringify({ action, payload }),
   });
 
-  const header = response.headers.get("x-crm-source");
-  const reasonHeader = response.headers.get("x-crm-fallback-reason");
-  setSource(
-    header === "n8n" ? "n8n" : header === "mock" ? "mock" : "unknown",
-    reasonHeader ? decodeURIComponent(reasonHeader) : "",
-  );
+  // Badge "Data contoh" bicara soal sumber papan, bukan tab Agen AI. Kedua
+  // gateway bisa hidup terpisah, jadi kalau `ai.*` ikut menulis ke store ini
+  // badge akan berkedip tiap antrian di-poll padahal papan sedang live.
+  if (!action.startsWith("ai.")) {
+    const header = response.headers.get("x-crm-source");
+    const reasonHeader = response.headers.get("x-crm-fallback-reason");
+    setSource(
+      header === "n8n" ? "n8n" : header === "mock" ? "mock" : "unknown",
+      reasonHeader ? decodeURIComponent(reasonHeader) : "",
+    );
+  }
 
   let body: unknown;
   try {
@@ -128,3 +133,26 @@ export const upsertSales = (payload: PayloadOf<"sales.upsert">) =>
   callCrm("sales.upsert", payload);
 
 export const statsSummary = () => callCrm("stats.summary", {});
+
+/* ── Wrapper agen AI ─────────────────────────────────────────────────────── */
+
+export const aiBootstrap = () => callCrm("ai.bootstrap", {});
+
+export const searchProspects = (
+  payload: PayloadOf<"ai.prospect.search"> = {},
+) => callCrm("ai.prospect.search", payload);
+
+export const draftFollowup = (payload: PayloadOf<"ai.draft.followup">) =>
+  callCrm("ai.draft.followup", payload);
+
+export const listAiTasks = (payload: PayloadOf<"ai.tasks.list"> = {}) =>
+  callCrm("ai.tasks.list", payload);
+
+export const generateAiTasks = (payload: PayloadOf<"ai.tasks.generate"> = {}) =>
+  callCrm("ai.tasks.generate", payload);
+
+export const createAiTask = (payload: PayloadOf<"ai.tasks.create">) =>
+  callCrm("ai.tasks.create", payload);
+
+export const decideAiTask = (payload: PayloadOf<"ai.tasks.decide">) =>
+  callCrm("ai.tasks.decide", payload);

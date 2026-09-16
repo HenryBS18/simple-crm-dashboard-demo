@@ -12,8 +12,27 @@ export type N8nOutcome =
   | { kind: "ok"; body: unknown }
   | { kind: "unavailable"; detail: string };
 
-export function n8nConfigured(): boolean {
-  return Boolean(process.env.N8N_CRM_URL && process.env.N8N_CRM_API_KEY);
+/**
+ * Action `ai.*` dilayani workflow kedua (`CRM AI Gateway`) di URL sendiri.
+ * Gateway lama sudah ~100 ribu karakter JSON dan menopang seluruh papan;
+ * menambah cabang ke dalamnya lewat API berarti menulis ulang seluruh
+ * workflow untuk perubahan yang sifatnya menambah saja.
+ *
+ * Konsekuensi yang memang diinginkan: kalau `N8N_CRM_AI_URL` kosong, hanya
+ * tab Agen AI yang jatuh ke data contoh — papan tetap live.
+ */
+function urlFor(action: string): string | undefined {
+  return action.startsWith("ai.")
+    ? process.env.N8N_CRM_AI_URL
+    : process.env.N8N_CRM_URL;
+}
+
+function urlNameFor(action: string): string {
+  return action.startsWith("ai.") ? "N8N_CRM_AI_URL" : "N8N_CRM_URL";
+}
+
+export function n8nConfigured(action: string): boolean {
+  return Boolean(urlFor(action) && process.env.N8N_CRM_API_KEY);
 }
 
 export function demoModeForced(): boolean {
@@ -24,12 +43,12 @@ export async function callN8n(
   action: string,
   payload: unknown,
 ): Promise<N8nOutcome> {
-  const url = process.env.N8N_CRM_URL;
+  const url = urlFor(action);
   const apiKey = process.env.N8N_CRM_API_KEY;
   if (!url || !apiKey) {
     return {
       kind: "unavailable",
-      detail: "N8N_CRM_URL atau N8N_CRM_API_KEY belum diisi",
+      detail: `${urlNameFor(action)} atau N8N_CRM_API_KEY belum diisi`,
     };
   }
 

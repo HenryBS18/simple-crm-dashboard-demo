@@ -111,7 +111,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
-  if (demoModeForced() || !n8nConfigured()) {
+  if (demoModeForced() || !n8nConfigured(action)) {
     return serveFromMock(action, payload);
   }
 

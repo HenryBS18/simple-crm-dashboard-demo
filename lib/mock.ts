@@ -1,9 +1,33 @@
-import { normalizePhone } from "@/lib/format";
+import {
+  type AiTaskKind,
+  AREA_LABELS,
+  CATEGORY_LABELS,
+  dedupeKeyFor,
+  type FollowupGoal,
+  GOAL_LABELS,
+  generateTasks,
+  matchProspect,
+  PROSPECT_SEED,
+  type ProspectRow,
+  pickGoal,
+  renderDraft,
+  SCORE_TIERS,
+  SCORE_WEIGHTS,
+  scoreProspect,
+  seedToRow,
+  TASK_KIND_LABELS,
+  TEMPLATE_IDS,
+  toCandidate,
+} from "@/lib/ai-rules";
+import { normalizePhone, waLink } from "@/lib/format";
 import type {
   Activity,
   ActivityType,
+  AgentStep,
+  AiTask,
   Lead,
   LeadType,
+  ProspectCandidate,
   Sales,
   Stage,
 } from "@/lib/schema";
@@ -29,6 +53,11 @@ type Store = {
   nextActivityId: number;
   nextSalesId: number;
   roundRobin: number;
+  /** Kolam prospek dan antrian usulan agen. Di mode live keduanya tinggal di
+      data table `crm_prospects` dan `crm_ai_tasks`. */
+  prospects: ProspectRow[];
+  aiTasks: AiTask[];
+  nextAiTaskId: number;
 };
 
 const SOURCES = [
@@ -300,6 +329,11 @@ function seed(): Store {
     nextActivityId: activityId,
     nextSalesId: sales.length + 1,
     roundRobin: 0,
+    prospects: PROSPECT_SEED.map((row, index) =>
+      seedToRow(row, String(index + 1)),
+    ),
+    aiTasks: [],
+    nextAiTaskId: 1,
   };
 }
 
@@ -308,6 +342,12 @@ function store(): Store {
   globalStore.__crmMock ??= seed();
   // Store lama yang masih nyangkut di global setelah HMR belum punya `archived`.
   globalStore.__crmMock.archived ??= [];
+  // Store yang nyangkut dari sebelum fitur agen ada belum punya tiga ini.
+  globalStore.__crmMock.prospects ??= PROSPECT_SEED.map((row, index) =>
+    seedToRow(row, String(index + 1)),
+  );
+  globalStore.__crmMock.aiTasks ??= [];
+  globalStore.__crmMock.nextAiTaskId ??= 1;
   return globalStore.__crmMock;
 }
 
@@ -375,50 +415,69 @@ function recountSales() {
   }
 }
 
-/** Kategorisasi tiruan: kata kunci usaha di NAMA (bukan alamat) berarti B2B. */
+/**
+ * Disalin apa adanya dari node `Plan Intake` di n8n: daftar katanya, batas
+ * kata `\\b...\\b`, dan rumus skornya. Sebelumnya mock memakai daftar lebih
+ * pendek dengan pencocokan substring dan putusan hit-pertama, sehingga
+ * "Glamping Ranca Upas Pinus" jadi B2B di mode live tapi B2C di mode contoh.
+ * Perbedaan itu tidak bisa dibiarkan lagi karena alasan kategori sekarang
+ * ikut ditampilkan sebagai hasil kerja agen.
+ */
 const B2B_KEYWORDS = [
   "villa",
   "resort",
+  "glamping",
   "hotel",
-  "cafe",
-  "kopi",
-  "roastery",
-  "catering",
-  "katering",
-  "dapur",
+  "homestay",
   "resto",
+  "cafe",
+  "kafe",
+  "pengelola",
+  "agent",
+  "toko",
   "cv",
   "pt",
-  "toko",
-  "grosir",
+  "ud",
+  "catering",
+  "reseller",
+  "distributor",
 ];
+
+function keywordHits(value: string): string[] {
+  const haystack = String(value ?? "").toLowerCase();
+  return B2B_KEYWORDS.filter((kw) =>
+    new RegExp(`\\b${kw}\\b`, "i").test(haystack),
+  );
+}
 
 function classify(
   name: string,
   address: string,
   orderCount: number,
 ): { type: LeadType; reason: string } {
-  const lower = name.toLowerCase();
-  const hit = B2B_KEYWORDS.find((k) => lower.includes(k));
-  if (hit) {
-    return {
-      type: "B2B",
-      reason: `Nama mengandung kata "${hit}", dikategorikan B2B`,
-    };
+  const nameHits = keywordHits(name);
+  const addrHits = keywordHits(address).filter((k) => !nameHits.includes(k));
+  let score = nameHits.length * 2 + addrHits.length;
+  if (orderCount > 0) score -= 2;
+  const type: LeadType = score > 0 ? "B2B" : "B2C";
+
+  const parts: string[] = [];
+  if (nameHits.length) {
+    parts.push(
+      `Nama mengandung kata ${nameHits.map((k) => `"${k}"`).join(", ")}`,
+    );
   }
-  const addressHit = B2B_KEYWORDS.find((k) =>
-    address.toLowerCase().includes(k),
-  );
-  if (addressHit) {
-    return {
-      type: "B2C",
-      reason: `Kata "${addressHit}" hanya ada di alamat, bukan nama usaha, dikategorikan B2C`,
-    };
+  if (addrHits.length) {
+    parts.push(
+      `Kata ${addrHits.map((k) => `"${k}"`).join(", ")} hanya ada di alamat`,
+    );
   }
-  return {
-    type: "B2C",
-    reason: `Pembelian atas nama pribadi, ${orderCount}x order, dikategorikan B2C`,
-  };
+  if (orderCount > 0) parts.push(`sudah ${orderCount}x order`);
+  if (!parts.length) {
+    parts.push("Tidak ada kata kunci bisnis di nama maupun alamat");
+  }
+
+  return { type, reason: `${parts.join(", ")}, dikategorikan ${type}` };
 }
 
 // Beban terkecil menang, seri dipecah alfabetis — sama persis dengan n8n,
@@ -795,6 +854,716 @@ export function handleMockAction(action: string, rawPayload: unknown): unknown {
     }
 
     default:
+      // Di mode live action ini dilayani gateway n8n terpisah, tapi di sini
+      // keduanya tetap satu dispatcher supaya fallback berlaku untuk semua.
+      if (action.startsWith("ai.")) return handleAiAction(action, payload);
       throw new MockError("UNKNOWN_ACTION", `Action "${action}" tidak dikenal`);
   }
+}
+
+/* ── Agen AI ───────────────────────────────────────────────────────────────
+   Tujuh action ini dilayani `CRM AI Gateway` di mode live. Aturannya diimpor
+   dari `lib/ai-rules.ts`, modul yang sama yang disalin ke Code node n8n, jadi
+   yang berbeda antara dua mode hanya tempat datanya disimpan.
+
+   Setiap efek tulis memanggil `handleMockAction` secara rekursif, bukan
+   menyalin logikanya. Itu satu-satunya cara memastikan "Setujui" di tab agen
+   berperilaku persis seperti tombol manual yang sudah ada.               */
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function runId(prefix: string): string {
+  return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Stopwatch untuk `steps[]`. Durasinya diukur, bukan dikarang — kalau nanti
+    ditunjukkan bersama log eksekusi n8n, angkanya tidak boleh saling
+    membantah. Jeda yang terlihat di layar dibuat di komponen, bukan di sini. */
+function stepper() {
+  let last = Date.now();
+  const steps: AgentStep[] = [];
+  return {
+    steps,
+    mark(key: string, label: string, detail: string, count: number | null) {
+      const now = Date.now();
+      steps.push({ key, label, detail, count, ms: now - last });
+      last = now;
+    },
+  };
+}
+
+function aiTaskById(id: string): AiTask {
+  const found = store().aiTasks.find((t) => t.id === id);
+  if (!found) throw new MockError("NOT_FOUND", `Tugas ${id} tidak ditemukan`);
+  return found;
+}
+
+function insertAiTask(
+  task: Omit<AiTask, "id" | "createdAt">,
+  at = nowIso(),
+): AiTask {
+  const s = store();
+  const row: AiTask = { ...task, id: String(s.nextAiTaskId++), createdAt: at };
+  s.aiTasks.push(row);
+  return row;
+}
+
+function pendingWithKey(key: string): AiTask | undefined {
+  return store().aiTasks.find(
+    (t) => t.dedupeKey === key && t.status === "pending",
+  );
+}
+
+/** Isi activity untuk follow-up yang disetujui. Sengaja menyebut bahwa
+    teksnya draf agen dan siapa yang menyetujui — timeline lead harus bisa
+    membedakan pesan yang ditulis sales sendiri dari yang disetujui. */
+function followupActivityContent(text: string, actor: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const prefix = `Follow-up WA (draft agen AI, disetujui ${actor}): `;
+  const room = 400 - prefix.length;
+  return prefix + (flat.length > room ? `${flat.slice(0, room - 1)}…` : flat);
+}
+
+function requireGoal(value: unknown, fallback: FollowupGoal): FollowupGoal {
+  const raw = str(value);
+  if (!raw) return fallback;
+  if (!(raw in GOAL_LABELS)) {
+    throw new MockError(
+      "VALIDATION_ERROR",
+      `Goal "${raw}" tidak dikenal. Pilihan: ${Object.keys(GOAL_LABELS).join(", ")}`,
+    );
+  }
+  return raw as FollowupGoal;
+}
+
+function waUrlFor(lead: Lead, text: string): string {
+  if (normalizePhone(lead.phone).length < 9) {
+    throw new MockError(
+      "VALIDATION_ERROR",
+      "Nomor WhatsApp lead tidak valid, draf tidak bisa dikirim",
+    );
+  }
+  return waLink(lead.phone, text);
+}
+
+function tally<T extends string>(values: T[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const value of values) out[value] = (out[value] ?? 0) + 1;
+  return out;
+}
+
+function handleAiAction(
+  action: string,
+  payload: Record<string, unknown>,
+): unknown {
+  const s = store();
+
+  switch (action) {
+    case "ai.bootstrap": {
+      const poolCounts = tally(s.prospects.map((p) => p.status));
+      const taskCounts = tally(s.aiTasks.map((t) => t.status));
+      return {
+        areas: Object.entries(AREA_LABELS).map(([key, label]) => ({
+          key,
+          label,
+          count: s.prospects.filter((p) => p.area === key).length,
+        })),
+        categories: Object.entries(CATEGORY_LABELS).map(([key, label]) => ({
+          key,
+          label,
+          count: s.prospects.filter((p) => p.category === key).length,
+        })),
+        goals: Object.entries(GOAL_LABELS).map(([key, label]) => ({
+          key,
+          label,
+        })),
+        taskKinds: Object.entries(TASK_KIND_LABELS).map(([key, label]) => ({
+          key,
+          label,
+        })),
+        templates: Object.entries(TEMPLATE_IDS).map(([goal, id]) => ({
+          id,
+          goal,
+          label: GOAL_LABELS[goal as FollowupGoal],
+        })),
+        pool: { total: s.prospects.length, ...poolCounts },
+        tasks: { total: s.aiTasks.length, ...taskCounts },
+        scoring: { weights: SCORE_WEIGHTS, tiers: SCORE_TIERS },
+      };
+    }
+
+    case "ai.prospect.search": {
+      const clock = stepper();
+      const query = str(payload.query).trim();
+      const area = str(payload.area);
+      const category = str(payload.category);
+      const includeUsed = payload.includeUsed === true;
+      const minScore = num(payload.minScore);
+      const limit = Math.min(24, Math.max(1, num(payload.limit) || 12));
+
+      if (area && !(area in AREA_LABELS)) {
+        throw new MockError(
+          "VALIDATION_ERROR",
+          `Area "${area}" tidak dikenal. Pilihan: ${Object.keys(AREA_LABELS).join(", ")}`,
+        );
+      }
+      if (category && !(category in CATEGORY_LABELS)) {
+        throw new MockError(
+          "VALIDATION_ERROR",
+          `Kategori "${category}" tidak dikenal. Pilihan: ${Object.keys(CATEGORY_LABELS).join(", ")}`,
+        );
+      }
+
+      const tokens = query ? query.split(/\s+/).filter(Boolean) : [];
+      clock.mark(
+        "parse",
+        "Membaca permintaan",
+        [
+          tokens.length
+            ? `kata kunci: ${tokens.join(", ")}`
+            : "tanpa kata kunci",
+          area ? `area ${AREA_LABELS[area as keyof typeof AREA_LABELS]}` : null,
+          category
+            ? `kategori ${CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS]}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        null,
+      );
+
+      clock.mark(
+        "pool",
+        "Membuka pool prospek",
+        `${s.prospects.length} baris di crm_prospects`,
+        s.prospects.length,
+      );
+
+      const rows = s.prospects.filter((p) => {
+        if (area && p.area !== area) return false;
+        if (category && p.category !== category) return false;
+        if (!includeUsed && p.status === "converted") return false;
+        return true;
+      });
+      clock.mark(
+        "filter",
+        "Menyaring area & kategori",
+        `${rows.length} kandidat lolos filter`,
+        rows.length,
+      );
+
+      const matched = rows.map((row) => ({
+        row,
+        ...matchProspect(row, query),
+      }));
+      const hits = tokens.length
+        ? matched.filter((m) => m.matchScore > 0).length
+        : rows.length;
+      clock.mark(
+        "match",
+        "Mencocokkan kata kunci",
+        tokens.length
+          ? `${hits} kandidat cocok dengan "${query}"`
+          : "tidak ada kata kunci, semua kandidat dipertahankan",
+        hits,
+      );
+
+      const existingByPhone = new Map(s.leads.map((l) => [l.phone, l]));
+      const alreadyInCrm = matched.filter((m) =>
+        existingByPhone.has(m.row.phone),
+      ).length;
+      clock.mark(
+        "dedupe",
+        "Mencocokkan dengan CRM",
+        alreadyInCrm
+          ? `${alreadyInCrm} nomor sudah terdaftar`
+          : "tidak ada nomor yang bentrok",
+        alreadyInCrm,
+      );
+
+      const now = Date.now();
+      let candidates: ProspectCandidate[] = matched.map((m) =>
+        toCandidate(m.row, {
+          now,
+          existingLeadId: existingByPhone.get(m.row.phone)?.id ?? "",
+          matchScore: m.matchScore,
+          matchedOn: m.matchedOn,
+        }),
+      );
+      if (minScore > 0) {
+        candidates = candidates.filter((c) => c.score >= minScore);
+      }
+      const avg = candidates.length
+        ? Math.round(
+            candidates.reduce((sum, c) => sum + c.score, 0) / candidates.length,
+          )
+        : 0;
+      clock.mark(
+        "score",
+        "Menilai kualitas listing",
+        candidates.length ? `skor rata-rata ${avg}` : "tidak ada yang dinilai",
+        candidates.length,
+      );
+
+      candidates.sort(
+        (a, b) =>
+          b.matchScore - a.matchScore ||
+          b.score - a.score ||
+          b.reviewCount - a.reviewCount ||
+          a.name.localeCompare(b.name),
+      );
+      const total = candidates.length;
+      const top = candidates.slice(0, limit);
+      clock.mark(
+        "rank",
+        "Mengurutkan hasil",
+        `${top.length} teratas ditampilkan`,
+        top.length,
+      );
+
+      const sources = Object.entries(tally(top.map((c) => c.sourceLabel))).map(
+        ([label, count]) => ({ label, count }),
+      );
+
+      return {
+        runId: runId("run"),
+        query,
+        filters: { area, category, minScore },
+        total,
+        returned: top.length,
+        tookMs: clock.steps.reduce((sum, step) => sum + step.ms, 0),
+        sources,
+        steps: clock.steps,
+        candidates: top,
+      };
+    }
+
+    case "ai.draft.followup": {
+      const lead = requireLead(str(payload.leadId));
+      const goal = requireGoal(payload.goal, pickGoal(lead));
+      const draft = renderDraft(lead, goal);
+      return {
+        lead,
+        draft: { ...draft, waUrl: waUrlFor(lead, draft.text) },
+        alternatives: Object.entries(GOAL_LABELS)
+          .filter(([key]) => key !== goal)
+          .map(([key, label]) => ({ goal: key, goalLabel: label })),
+      };
+    }
+
+    case "ai.tasks.list": {
+      const status = str(payload.status);
+      const kind = str(payload.kind);
+      const leadId = str(payload.leadId);
+      const limit = Math.max(1, num(payload.limit) || 50);
+
+      const items = s.aiTasks
+        .filter((t) => !status || t.status === status)
+        .filter((t) => !kind || t.kind === kind)
+        .filter((t) => !leadId || t.leadId === leadId)
+        .sort(
+          (a, b) =>
+            b.priority - a.priority ||
+            Date.parse(b.createdAt) - Date.parse(a.createdAt),
+        )
+        .slice(0, limit);
+
+      return {
+        items,
+        total: items.length,
+        counts: tally(s.aiTasks.map((t) => t.status)),
+      };
+    }
+
+    case "ai.tasks.generate": {
+      const kinds = Array.isArray(payload.kinds)
+        ? (payload.kinds.map(String) as AiTaskKind[])
+        : undefined;
+      for (const kind of kinds ?? []) {
+        if (!(kind in TASK_KIND_LABELS)) {
+          throw new MockError(
+            "VALIDATION_ERROR",
+            `Jenis tugas "${kind}" tidak dikenal`,
+          );
+        }
+      }
+
+      const run = runId("gen");
+      const planned = generateTasks({
+        leads: s.leads,
+        activities: s.activities,
+        prospects: s.prospects,
+        existingTasks: s.aiTasks.map((t) => ({
+          dedupe_key: t.dedupeKey,
+          status: t.status,
+          decided_at: t.decidedAt,
+        })),
+        kinds,
+      });
+
+      const items = planned.tasks.map((task) =>
+        insertAiTask({
+          kind: task.kind,
+          status: "pending",
+          title: task.title,
+          reason: task.reason,
+          priority: task.priority,
+          leadId: task.leadId,
+          leadName: task.leadName,
+          payload: task.payload,
+          result: null,
+          dedupeKey: task.dedupeKey,
+          runId: run,
+          actor: "",
+          decidedAt: "",
+          executedAt: "",
+        }),
+      );
+
+      return {
+        runId: run,
+        scanned: {
+          leads: s.leads.length,
+          activities: s.activities.length,
+          prospects: s.prospects.length,
+          pendingTasks: s.aiTasks.filter((t) => t.status === "pending").length,
+        },
+        created: items.length,
+        skipped: planned.skipped.length,
+        items,
+        skippedReasons: planned.skipped,
+      };
+    }
+
+    case "ai.tasks.create": {
+      const kind = str(payload.kind) as AiTaskKind;
+      if (!(kind in TASK_KIND_LABELS)) {
+        throw new MockError(
+          "VALIDATION_ERROR",
+          `Jenis tugas "${kind}" tidak dikenal`,
+        );
+      }
+      const actor = str(payload.actor, "Operator");
+      const run = runId("man");
+
+      if (kind === "prospect_batch") {
+        const ids = Array.isArray(payload.prospectIds)
+          ? payload.prospectIds.map(String)
+          : [];
+        if (!ids.length) {
+          throw new MockError(
+            "VALIDATION_ERROR",
+            "prospectIds tidak boleh kosong",
+          );
+        }
+        const rows = ids.map((id) => {
+          const row = s.prospects.find((p) => p.id === id);
+          if (!row) {
+            throw new MockError("NOT_FOUND", `Prospek ${id} tidak ditemukan`);
+          }
+          return row;
+        });
+
+        const key = dedupeKeyFor("prospect_batch", { prospectIds: ids });
+        const existing = pendingWithKey(key);
+        if (existing) return { task: existing, duplicate: true };
+
+        const scores = rows.map((r) => scoreProspect(r).score);
+        const avg = Math.round(
+          scores.reduce((a, b) => a + b, 0) / scores.length,
+        );
+        return {
+          task: insertAiTask({
+            kind,
+            status: "pending",
+            title: `Tambahkan ${rows.length} prospek pilihan ke CRM`,
+            reason: `Dipilih manual dari hasil pencarian, skor rata-rata ${avg}/100 — menunggu persetujuan sebelum ditulis ke crm_leads`,
+            priority: avg,
+            leadId: "",
+            leadName: "",
+            payload: {
+              prospectIds: ids,
+              source: "manual",
+              areaMix: [...new Set(rows.map((r) => r.area))],
+            },
+            result: null,
+            dedupeKey: key,
+            runId: run,
+            actor,
+            decidedAt: "",
+            executedAt: "",
+          }),
+          duplicate: false,
+        };
+      }
+
+      const lead = requireLead(str(payload.leadId));
+
+      if (kind === "followup") {
+        const goal = requireGoal(payload.goal, pickGoal(lead));
+        const draft = renderDraft(lead, goal);
+        const text = str(payload.text).trim() || draft.text;
+        const key = dedupeKeyFor("followup", { leadId: lead.id });
+        const existing = pendingWithKey(key);
+        if (existing) return { task: existing, duplicate: true };
+
+        return {
+          task: insertAiTask({
+            kind,
+            status: "pending",
+            title: `Follow up ${lead.name}`,
+            reason: draft.reason,
+            priority: 60,
+            leadId: lead.id,
+            leadName: lead.name,
+            payload: {
+              leadId: lead.id,
+              goal,
+              templateId: draft.templateId,
+              text,
+              channel: "wa",
+              vars: draft.vars,
+            },
+            result: null,
+            dedupeKey: key,
+            runId: run,
+            actor,
+            decidedAt: "",
+            executedAt: "",
+          }),
+          duplicate: false,
+        };
+      }
+
+      const stage = str(payload.stage);
+      if (!(stage in STAGE_LABELS)) {
+        throw new MockError(
+          "VALIDATION_ERROR",
+          `Stage "${stage}" tidak dikenal`,
+        );
+      }
+      const key = dedupeKeyFor("stage_move", { leadId: lead.id, stage });
+      const existing = pendingWithKey(key);
+      if (existing) return { task: existing, duplicate: true };
+
+      return {
+        task: insertAiTask({
+          kind,
+          status: "pending",
+          title: `Pindahkan ${lead.name} ke ${STAGE_LABELS[stage as Stage]}`,
+          reason: `Diusulkan manual dari ${STAGE_LABELS[lead.stage]} ke ${STAGE_LABELS[stage as Stage]}`,
+          priority: 60,
+          leadId: lead.id,
+          leadName: lead.name,
+          payload: {
+            leadId: lead.id,
+            from: lead.stage,
+            to: stage,
+            note: str(payload.note, "Dipindahkan atas usulan agen"),
+          },
+          result: null,
+          dedupeKey: key,
+          runId: run,
+          actor,
+          decidedAt: "",
+          executedAt: "",
+        }),
+        duplicate: false,
+      };
+    }
+
+    case "ai.tasks.decide": {
+      const task = aiTaskById(str(payload.id));
+      const decision = str(payload.decision);
+      if (decision !== "approve" && decision !== "reject") {
+        throw new MockError(
+          "VALIDATION_ERROR",
+          'decision harus "approve" atau "reject"',
+        );
+      }
+      if (task.status !== "pending") {
+        throw new MockError("VALIDATION_ERROR", "Tugas sudah diputuskan");
+      }
+
+      const actor = str(payload.actor, "Operator");
+      const overrides = asRecord(payload.overrides);
+      task.actor = actor;
+      task.decidedAt = nowIso();
+
+      if (decision === "reject") {
+        task.status = "rejected";
+        task.result = { kind: task.kind, rejected: true };
+        return { task, result: task.result };
+      }
+
+      // Efek yang gagal tidak dibalas sebagai error HTTP: barisnya sendiri
+      // yang menjadi catatan kegagalan, supaya antrian di layar langsung
+      // menunjukkan apa yang terjadi tanpa perlu ambil ulang.
+      try {
+        task.result = runTaskEffect(task, overrides, actor);
+        task.status = "approved";
+        task.executedAt = nowIso();
+      } catch (error) {
+        task.status = "failed";
+        task.result = {
+          kind: task.kind,
+          error: {
+            code: error instanceof MockError ? error.code : "INTERNAL_ERROR",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+
+      return { task, result: task.result };
+    }
+
+    default:
+      throw new MockError("UNKNOWN_ACTION", `Action "${action}" tidak dikenal`);
+  }
+}
+
+function runTaskEffect(
+  task: AiTask,
+  overrides: Record<string, unknown>,
+  actor: string,
+): Record<string, unknown> {
+  const s = store();
+  const data = task.payload as Record<string, unknown>;
+
+  if (task.kind === "followup") {
+    const text = (str(overrides.text) || str(data.text)).trim();
+    if (!text) {
+      throw new MockError("VALIDATION_ERROR", "Teks pesan tidak boleh kosong");
+    }
+    const lead = requireLead(str(data.leadId));
+    const result = handleMockAction("activities.create", {
+      leadId: lead.id,
+      type: "wa",
+      content: followupActivityContent(text, actor),
+      actor,
+    }) as { activity: Activity; lead: Lead };
+
+    return {
+      kind: "followup",
+      activity: result.activity,
+      lead: result.lead,
+      waUrl: waUrlFor(result.lead, text),
+      text,
+    };
+  }
+
+  if (task.kind === "stage_move") {
+    const to = str(overrides.stage) || str(data.to);
+    const result = handleMockAction("leads.move", {
+      id: str(data.leadId),
+      stage: to,
+      note: str(data.note, "Dipindahkan atas usulan agen"),
+      actor,
+    }) as { lead: Lead; activity: Activity };
+
+    return {
+      kind: "stage_move",
+      lead: result.lead,
+      activity: result.activity,
+      from: str(data.from),
+      to,
+    };
+  }
+
+  const ids = Array.isArray(overrides.prospectIds)
+    ? overrides.prospectIds.map(String)
+    : Array.isArray(data.prospectIds)
+      ? (data.prospectIds as unknown[]).map(String)
+      : [];
+
+  const leads: Lead[] = [];
+  const duplicateLeads: Lead[] = [];
+  const invalidItems: { name: string; phone_raw: string; reason: string }[] =
+    [];
+  const categorizations: { leadId: string; type: string; reason: string }[] =
+    [];
+  const assignments: {
+    leadId: string;
+    ownerId: string;
+    ownerName: string;
+    rule: string;
+  }[] = [];
+  const converted: string[] = [];
+
+  for (const id of ids) {
+    const row = s.prospects.find((p) => p.id === id);
+    if (!row) {
+      invalidItems.push({
+        name: "",
+        phone_raw: "",
+        reason: `Prospek ${id} tidak ditemukan`,
+      });
+      continue;
+    }
+
+    try {
+      // Lewat `leads.create`, bukan penulisan langsung: dedupe nomor,
+      // kategorisasi, dan round-robin harus berasal dari jalur yang sama
+      // dengan tombol "Tambah lead" biasa.
+      const created = handleMockAction(
+        "leads.create",
+        toCandidate(row, { existingLeadId: "" }).leadDraft,
+      ) as {
+        lead: Lead;
+        duplicate: boolean;
+        categorization?: { type: string; reason: string };
+        assignment?: { ownerId: string; ownerName: string; rule: string };
+      };
+
+      if (created.duplicate) {
+        duplicateLeads.push(created.lead);
+        continue;
+      }
+
+      leads.push(created.lead);
+      converted.push(row.id);
+      row.status = "converted";
+      row.convertedLeadId = created.lead.id;
+
+      if (created.categorization) {
+        categorizations.push({
+          leadId: created.lead.id,
+          type: created.categorization.type,
+          reason: created.categorization.reason,
+        });
+      }
+      if (created.assignment) {
+        assignments.push({ leadId: created.lead.id, ...created.assignment });
+      }
+    } catch (error) {
+      invalidItems.push({
+        name: row.name,
+        phone_raw: row.phoneRaw,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (!leads.length && !duplicateLeads.length) {
+    throw new MockError(
+      "VALIDATION_ERROR",
+      "Tidak ada prospek yang bisa dimasukkan",
+    );
+  }
+
+  return {
+    kind: "prospect_batch",
+    created: leads.length,
+    duplicates: duplicateLeads.length,
+    invalid: invalidItems.length,
+    invalidItems,
+    leads,
+    duplicateLeads,
+    categorizations,
+    assignments,
+    prospectIds: ids,
+    convertedProspects: converted.length,
+  };
 }

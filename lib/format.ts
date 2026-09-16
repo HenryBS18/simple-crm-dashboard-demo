@@ -24,8 +24,14 @@ export function formatPhone(input: string): string {
   return `+62 ${rest.slice(0, 3)} ${rest.slice(3, 7)} ${rest.slice(7)}`;
 }
 
-export function waLink(phone: string): string {
-  return `https://wa.me/${normalizePhone(phone)}`;
+/**
+ * `text` opsional mengisi kolom pesan WhatsApp lebih dulu. Dipakai draf agen:
+ * yang menekan tombol kirim tetap manusia, jadi pesannya harus sudah terbaca
+ * utuh di layar mereka sebelum itu.
+ */
+export function waLink(phone: string, text?: string): string {
+  const base = `https://wa.me/${normalizePhone(phone)}`;
+  return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }
 
 const MINUTE = 60_000;
