@@ -270,8 +270,9 @@ Dipakai untuk demo input manual di depan klien:
 > (`FF6HJ35DQY08mQ4O`, 37 node) berjalan di project Demo Prototype dari sumber
 > [`n8n/ai-gateway.workflow.js`](ai-gateway.workflow.js). Ketujuh action `ai.*`
 > dilayani n8n selama `N8N_CRM_AI_URL` terisi di `.env.local`; kalau kosong
-> atau webhook-nya mati, action `ai.*` jatuh ke `lib/mock.ts` — itu perilaku
-> yang memang dirancang, bukan kegagalan.
+> atau webhook-nya mati, action `ai.*` membalas `503 BACKEND_UNAVAILABLE` —
+> dashboard tidak lagi punya data contoh untuk jatuh ke sana. Papan kanban
+> (action non-`ai.`) tetap live karena dilayani URL gateway yang terpisah.
 >
 > Dua hal yang baru ketahuan saat deploy, keduanya sudah diperbaiki di sumber:
 >
@@ -284,10 +285,11 @@ Dipakai untuk demo input manual di depan klien:
 >    dedupe nomor melar, dan satu request makan 45 detik. Dengan `executeOnce`
 >    angkanya kembali 24 dan request selesai di bawah satu detik.
 >
-> Contoh respons di bawah **diambil dari eksekusi `lib/mock.ts`**, bukan dari
-> n8n. Keduanya memakai kernel aturan yang sama (`lib/ai-rules.ts`), jadi
-> bentuknya identik — tapi ini perlu disebut supaya janji "semua contoh dari
-> eksekusi nyata" di atas tidak jadi bohong.
+> Contoh respons di bawah diambil saat gateway ini baru di-deploy, dari masa
+> ketika dashboard masih punya salinan kernel aturan di `lib/mock.ts` untuk
+> dibandingkan bentuknya. Berkas itu sudah dihapus dari dashboard — kernel
+> aturannya (skoring, template, heuristik) sekarang hidup satu-satunya di
+> workflow ini, jadi tidak ada lagi yang perlu dicocokkan di sisi frontend.
 
 ## Kenapa gateway terpisah
 
@@ -309,8 +311,9 @@ prefiks action di `lib/n8n.ts`: action berawalan `ai.` ke `N8N_CRM_AI_URL`,
 sisanya ke `N8N_CRM_URL`.
 
 Konsekuensi yang memang diinginkan: kalau `N8N_CRM_AI_URL` kosong atau
-workflow-nya mati, **hanya tab Agen AI** yang jatuh ke data contoh. Papan
-kanban tetap live.
+workflow-nya mati, **hanya tab Agen AI** yang membalas `503
+BACKEND_UNAVAILABLE`. Papan kanban tetap live karena dilayani `N8N_CRM_URL`
+yang terpisah.
 
 ## Batas tulis
 
@@ -351,8 +354,9 @@ berurutan dan monoton, jadi sekilas lihat pun ketahuan ini data contoh.
 ## Tidak ada LLM
 
 Skoring, pemilihan template, dan heuristik usulan semuanya deterministik.
-Kernelnya ada di `lib/ai-rules.ts` dan disalin ke tiap Code node. Titik tukar
-ke LLM asli nanti cuma satu node — kontrak action di bawah tidak perlu berubah.
+Kernelnya hidup satu-satunya di Code node workflow ini — dashboard tidak
+punya salinannya. Titik tukar ke LLM asli nanti cuma satu node — kontrak
+action di bawah tidak perlu berubah.
 
 ## Ringkasan action
 
@@ -559,9 +563,12 @@ Lalu `publish_workflow`, pastikan `N8N_CRM_AI_URL` terisi di `.env.local`, dan
 uji dengan alur di README bagian "Agen AI". Restart `next dev` setelah mengubah
 `.env.local` — variabel sisi server dibaca saat server start.
 
-Penanda tembus-tidaknya adalah header `x-crm-source` dari `app/api/crm/route.ts`:
-`n8n` berarti live, `mock` berarti jatuh ke data contoh dan alasannya ada di
-`x-crm-fallback-reason`.
+Penanda tembus-tidaknya bukan header, tapi status HTTP: `200` dengan `ok: true`
+berarti live. Backend mati (URL/API key kosong, timeout, error jaringan, 5xx,
+atau respons di luar kontrak) membalas `503` dengan
+`{ ok: false, error: { code: "BACKEND_UNAVAILABLE", message } }` —
+`message`-nya berisi alasan gagalnya, mis. "N8N_CRM_AI_URL atau
+N8N_CRM_API_KEY belum diisi".
 
 ---
 

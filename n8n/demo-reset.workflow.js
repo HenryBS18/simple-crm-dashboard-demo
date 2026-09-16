@@ -1,4 +1,11 @@
-import { expr, ifElse, node, sticky, trigger, workflow } from "@n8n/workflow-sdk";
+import {
+  expr,
+  ifElse,
+  node,
+  sticky,
+  trigger,
+  workflow,
+} from "@n8n/workflow-sdk";
 
 const T_LEADS = "048bYoe3wwNXPwmS";
 const T_ACTIVITIES = "hoviNVBkQPJcv3yi";

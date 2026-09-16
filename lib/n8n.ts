@@ -18,8 +18,9 @@ export type N8nOutcome =
  * menambah cabang ke dalamnya lewat API berarti menulis ulang seluruh
  * workflow untuk perubahan yang sifatnya menambah saja.
  *
- * Konsekuensi yang memang diinginkan: kalau `N8N_CRM_AI_URL` kosong, hanya
- * tab Agen AI yang jatuh ke data contoh — papan tetap live.
+ * Konsekuensi yang memang diinginkan: kalau `N8N_CRM_AI_URL` kosong, action
+ * `ai.*` membalas 503 lewat `callN8n` di bawah — papan tetap live karena
+ * dilayani `N8N_CRM_URL` yang terpisah.
  */
 function urlFor(action: string): string | undefined {
   if (action.startsWith("ai.")) return process.env.N8N_CRM_AI_URL;
@@ -31,10 +32,6 @@ function urlNameFor(action: string): string {
   if (action.startsWith("ai.")) return "N8N_CRM_AI_URL";
   if (action.startsWith("demo.")) return "N8N_CRM_RESET_URL";
   return "N8N_CRM_URL";
-}
-
-export function n8nConfigured(action: string): boolean {
-  return Boolean(urlFor(action) && process.env.N8N_CRM_API_KEY);
 }
 
 export async function callN8n(

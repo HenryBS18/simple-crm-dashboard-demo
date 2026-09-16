@@ -16,11 +16,22 @@
    keduanya di Ova Villa. */
 const API = "http://localhost:3000/api/crm";
 
-const KEEP_LEAD_IDS = new Set(["1","2","3","4","5","6","7","8","9","10"]);
-const KEEP_SALES_IDS = new Set(["1","2","3","4"]);
+const KEEP_LEAD_IDS = new Set([
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+]);
+const KEEP_SALES_IDS = new Set(["1", "2", "3", "4"]);
 const DROP_ACTIVITY_IDS = new Set(["34", "43"]);
 /* Ova Villa dipindahkan agen saat uji coba; stage aslinya todo. */
-const STAGE_OVERRIDE = { "1": "todo" };
+const STAGE_OVERRIDE = { 1: "todo" };
 
 async function call(action, payload = {}) {
   const res = await fetch(API, {
@@ -54,7 +65,9 @@ for (const lead of leads) {
 
 /* Titik nol = activity paling baru yang tersisa. Semua offset dihitung mundur
    dari sana, jadi saat reset seluruh timeline berakhir "barusan". */
-const times = activities.map((a) => Date.parse(a.created_at)).filter((t) => !Number.isNaN(t));
+const times = activities
+  .map((a) => Date.parse(a.created_at))
+  .filter((t) => !Number.isNaN(t));
 const zero = Math.max(...times);
 const minutesAgo = (iso) => {
   const t = Date.parse(iso);

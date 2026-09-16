@@ -18,9 +18,10 @@ const WF_INTAKE = "kEy4STOjkUNhQTGv";
 /* Kernel aturan agen. Ditulis satu kali di sini lalu disisipkan ke setiap Code
    node yang membutuhkannya — n8n tidak punya modul bersama antar Code node,
    jadi tanpa ini salinannya pasti melenceng satu sama lain.
-   KEEP IN SYNC WITH lib/ai-rules.ts */
+   Kernel ini sekarang HANYA hidup di sini — dashboard (frontend) tidak lagi
+   punya salinannya, jadi tidak ada file lain yang perlu disinkronkan. */
 const HELPERS = `
-// ── KEEP IN SYNC WITH lib/ai-rules.ts ────────────────────────────────────────
+// ── Kernel aturan agen — satu-satunya salinan, hidup hanya di n8n ───────────
 var DAY_MS = 86400000;
 var STALE_DAYS = 3;
 var BRAND = 'WithMi';
@@ -1749,8 +1750,8 @@ const insertActivity = node({
           content: expr(
             "{{ $('Plan Task Decide').first().json.activity_content }}",
           ),
-          // Actor selalu dikirim eksplisit: default n8n dan default mock
-          // berbeda, dan perbedaan itu tidak boleh muncul di timeline.
+          // Actor selalu dikirim eksplisit, tidak mengandalkan default node,
+          // supaya timeline tidak menampilkan nilai yang tidak konsisten.
           actor: expr("{{ $('Plan Task Decide').first().json.actor }}"),
           created_at: expr("{{ $('Plan Task Decide').first().json.nowIso }}"),
         },
@@ -2002,7 +2003,7 @@ const noteAuth = sticky(
 );
 
 const noteRules = sticky(
-  "## Aturan dicerminkan di kode dashboard\nSeluruh skoring, template pesan, dan heuristik usulan ada juga di `lib/ai-rules.ts`. Mengubah angka atau kalimat di sini tanpa mengubah file itu membuat lead yang sama dibaca berbeda tergantung backend mana yang hidup.\n\nTidak ada LLM di workflow ini. Semuanya deterministik.",
+  "## Aturan hanya hidup di sini\nSeluruh skoring, template pesan, dan heuristik usulan ada satu-satunya di workflow ini — dashboard tidak lagi punya salinannya (`lib/ai-rules.ts` sudah dihapus dari frontend). Tidak ada file lain yang perlu disinkronkan lagi.\n\nTidak ada LLM di workflow ini. Semuanya deterministik.",
   [],
   { color: 3 },
 );
