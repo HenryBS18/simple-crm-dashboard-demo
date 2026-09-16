@@ -256,6 +256,10 @@ export const ACTIONS = {
   "leads.update": { payload: leadsUpdatePayload, data: leadWithActivityData },
   "leads.move": { payload: leadsMovePayload, data: leadWithActivityData },
   "leads.assign": { payload: leadsAssignPayload, data: leadsAssignData },
+  // Hapus lead itu soft delete: barisnya diarsipkan, bukan dibuang. Kontrak
+  // `Lead` sengaja tidak berubah — penanda arsipnya disaring di sisi n8n.
+  "leads.delete": { payload: leadsGetPayload, data: leadWithActivityData },
+  "leads.restore": { payload: leadsGetPayload, data: leadWithActivityData },
   "activities.create": {
     payload: activitiesCreatePayload,
     data: activitiesCreateData,

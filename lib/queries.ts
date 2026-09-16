@@ -175,6 +175,77 @@ export function useAssignLead() {
   });
 }
 
+/**
+ * Menghapus lead itu soft delete di n8n: barisnya diarsipkan, jadi "Urungkan"
+ * di toast benar-benar bisa mengembalikannya, bukan sekadar basa-basi.
+ */
+export function useRestoreLead() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => crm.restoreLead(id),
+    onSuccess: (data) => {
+      client.invalidateQueries({ queryKey: keys.leads });
+      client.invalidateQueries({ queryKey: keys.bootstrap });
+      client.invalidateQueries({ queryKey: keys.lead(data.lead.id) });
+      toast.success(`${data.lead.name} dipulihkan`);
+    },
+    onError: () => {
+      toast.error("Lead gagal dipulihkan. Coba lagi.");
+    },
+  });
+}
+
+export function useDeleteLead() {
+  const client = useQueryClient();
+  const restore = useRestoreLead();
+
+  return useMutation({
+    mutationFn: (id: string) => crm.deleteLead(id),
+
+    onMutate: async (id): Promise<OptimisticContext> => {
+      await client.cancelQueries({ queryKey: keys.leads });
+      const previous = client.getQueryData<LeadsList>(keys.leads);
+      client.setQueryData<LeadsList>(keys.leads, (current) =>
+        current
+          ? {
+              ...current,
+              items: current.items.filter((l) => l.id !== id),
+              total: Math.max(0, current.total - 1),
+            }
+          : current,
+      );
+      return { previous };
+    },
+
+    onError: (_error, _id, context) => {
+      if (context?.previous) client.setQueryData(keys.leads, context.previous);
+      toast.error("Lead gagal dihapus. Daftar dikembalikan, coba lagi.");
+    },
+
+    onSuccess: (data) => {
+      // Ditandai basi tanpa refetch: panel detailnya sedang ditutup pemanggil,
+      // memaksa ambil ulang cuma memunculkan kedipan "tidak bisa dimuat".
+      client.invalidateQueries({
+        queryKey: keys.lead(data.lead.id),
+        refetchType: "none",
+      });
+      toast.success(`${data.lead.name} dihapus`, {
+        action: {
+          label: "Urungkan",
+          onClick: () => restore.mutate(data.lead.id),
+        },
+      });
+    },
+
+    onSettled: () => {
+      client.invalidateQueries({ queryKey: keys.leads });
+      // lead_count sales ikut turun, dan bootstrap yang mengisi angkanya.
+      client.invalidateQueries({ queryKey: keys.bootstrap });
+    },
+  });
+}
+
 /** Tidak optimistic: hasil kategorisasi dan assignment harus datang dari server. */
 export function useCreateLead() {
   const client = useQueryClient();

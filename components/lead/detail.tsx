@@ -1,13 +1,16 @@
 "use client";
 
 import { cn } from "cn";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { ActivityTimeline } from "@/components/lead/activity-timeline";
 import { ContactBlock } from "@/components/lead/contact-block";
+import { DeleteLeadDialog } from "@/components/lead/delete-lead-dialog";
 import { NoteComposer } from "@/components/lead/note-composer";
 import { SegmentTag } from "@/components/shell/segment-tag";
 import { StaleDot } from "@/components/shell/stale-mark";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -29,14 +32,19 @@ import { resolveStages, STAGE_LABELS } from "@/lib/stage";
 export function LeadDetail({
   leadId,
   showPageLink = true,
+  onDeleted,
 }: {
   leadId: string;
   showPageLink?: boolean;
+  /** Panel ini hidup di drawer dan di halaman penuh, dan keduanya harus
+      menyingkir dengan cara berbeda setelah lead-nya dihapus. */
+  onDeleted?: () => void;
 }) {
   const { data, isPending, isError, refetch } = useLead(leadId);
   const bootstrapQuery = useBootstrap();
   const move = useMoveLead();
   const assign = useAssignLead();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const stages = resolveStages(bootstrapQuery.data?.stages);
   const sales = bootstrapQuery.data?.sales ?? [];
@@ -187,7 +195,27 @@ export function LeadDetail({
           <NoteComposer leadId={lead.id} actor={lead.owner_name} />
           <ActivityTimeline activities={data.activities} />
         </div>
+
+        {/* Aksi merusak ditaruh paling bawah, jauh dari tombol sehari-hari. */}
+        <div className="border-t border-line pt-4">
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 aria-hidden />
+            Hapus lead
+          </Button>
+        </div>
       </div>
+
+      <DeleteLeadDialog
+        lead={lead}
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        onDeleted={onDeleted}
+      />
     </div>
   );
 }

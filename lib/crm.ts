@@ -115,6 +115,10 @@ export const moveLead = (payload: PayloadOf<"leads.move">) =>
 export const assignLead = (payload: PayloadOf<"leads.assign">) =>
   callCrm("leads.assign", payload);
 
+export const deleteLead = (id: string) => callCrm("leads.delete", { id });
+
+export const restoreLead = (id: string) => callCrm("leads.restore", { id });
+
 export const createActivity = (payload: PayloadOf<"activities.create">) =>
   callCrm("activities.create", payload);
 

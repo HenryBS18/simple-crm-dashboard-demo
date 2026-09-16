@@ -159,6 +159,38 @@ beban paling ringan, tanpa memandang segmen lead.
 
 `lead_count` owner lama turun dan owner baru naik.
 
+### leads.delete
+
+Payload `{ id, actor? }`. Soft delete: baris di `crm_leads` tidak dibuang, kolom
+`deleted_at` diisi timestamp. `lead_count` owner-nya turun 1 dan satu activity
+`note` "Lead dihapus (diarsipkan)" dicatat.
+
+```json
+{"lead":{"id":"11","name":"Henry Bintang Setiawan","...":"..."},
+ "activity":{"type":"note","content":"Lead dihapus (diarsipkan)"}}
+```
+
+Setelah ini lead tidak muncul di `leads.list`, tidak dihitung `stats.summary`,
+dan `leads.get` / `leads.move` / `leads.assign` / `leads.update` /
+`activities.create` untuk id itu balas 404 `NOT_FOUND`. Menghapus lead yang sudah
+terhapus → 400 `VALIDATION_ERROR` "Lead sudah dihapus".
+
+`deleted_at` **tidak pernah ikut dikirim** di objek `Lead` — semua reader
+menyaringnya di sisi n8n, jadi bentuk `Lead` di atas tetap berlaku apa adanya.
+
+Nomor telepon lead yang terarsip juga dilepas dari pengecekan duplikat, jadi
+`leads.create` dengan nomor yang sama membuat lead baru (`duplicate: false`),
+bukan mengembalikan baris yang tak terlihat di mana pun.
+
+### leads.restore
+
+Payload `{ id, actor? }`. Kebalikannya: `deleted_at` dikosongkan, `lead_count`
+owner naik 1, activity `note` "Lead dipulihkan dari arsip". Response sama
+bentuknya dengan `leads.delete`.
+
+Memulihkan lead yang tidak sedang terhapus → 400 `VALIDATION_ERROR`
+"Lead tidak sedang dihapus". Id yang tidak ada → 404 `NOT_FOUND`.
+
 ### activities.create
 
 Payload `{ leadId, type, content, actor? }`.
@@ -212,7 +244,7 @@ Tanpa API key. Memakai pipeline intake yang sama, membalas
 | Workflow CRM API Gateway | `tcHXd9QlPQTJiZTa` |
 | Workflow CRM Lead Intake | `kEy4STOjkUNhQTGv` |
 | Workflow CRM Stale Detector | `mLLbQrkqTnLKQadS` |
-| Data table crm_leads | `048bYoe3wwNXPwmS` |
+| Data table crm_leads | `048bYoe3wwNXPwmS` (punya kolom `deleted_at` untuk arsip) |
 | Data table crm_sales | `sIZNvfyMzaUA9VFD` |
 | Data table crm_activities | `hoviNVBkQPJcv3yi` |
 | Data table crm_config | `GlW1ROM8sSfdO7LA` |

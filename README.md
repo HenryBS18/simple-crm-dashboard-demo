@@ -79,6 +79,11 @@ Catatan teknis:
 - Filter dan kartu yang sedang terbuka disimpan di URL (`?seg=&sales=&q=&lead=`)
   supaya link bisa dibagikan saat demo.
 - Lint memakai **Biome**, bukan ESLint. `next lint` tidak ada lagi di Next 16.
+- Lead bisa dihapus dari panel detail, dan itu **soft delete**: barisnya tetap ada
+  di data table `crm_leads` dengan kolom `deleted_at` terisi, cuma disaring dari
+  `leads.list`, `leads.get`, dan `stats.summary`. Toast sukses menyediakan
+  "Urungkan" yang memanggil `leads.restore`; kalau toast-nya sudah lewat,
+  pemulihan manual tinggal mengosongkan `deleted_at` di data table n8n.
 - Sales tidak bisa dihapus — kontrak n8n tidak punya `sales.delete` dan baris data
   table tidak bisa dibuang lewat API. Yang tersedia cuma status Aktif/Nonaktif.
   Sales nonaktif tidak pernah kebagian penugasan otomatis.

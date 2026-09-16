@@ -20,6 +20,9 @@ const DAY = 24 * HOUR;
 
 type Store = {
   leads: Lead[];
+  /** Lead yang dihapus pindah ke sini, bukan hilang — supaya setiap pembaca
+      yang memakai `leads` otomatis tidak melihatnya dan restore tetap mungkin. */
+  archived: Lead[];
   activities: Activity[];
   sales: Sales[];
   nextLeadId: number;
@@ -290,6 +293,7 @@ function seed(): Store {
 
   return {
     leads,
+    archived: [],
     activities,
     sales,
     nextLeadId: leads.length + 1,
@@ -302,6 +306,8 @@ function seed(): Store {
 const globalStore = globalThis as unknown as { __crmMock?: Store };
 function store(): Store {
   globalStore.__crmMock ??= seed();
+  // Store lama yang masih nyangkut di global setelah HMR belum punya `archived`.
+  globalStore.__crmMock.archived ??= [];
   return globalStore.__crmMock;
 }
 
@@ -682,6 +688,43 @@ export function handleMockAction(action: string, rawPayload: unknown): unknown {
         },
         activity,
       };
+    }
+
+    case "leads.delete": {
+      const lead = requireLead(str(payload.id));
+      s.leads.splice(s.leads.indexOf(lead), 1);
+      s.archived.push(lead);
+      touch(lead);
+      recountSales();
+      const activity = addActivity(
+        lead.id,
+        "note",
+        "Lead dihapus (diarsipkan)",
+        "system",
+      );
+      return { lead, activity };
+    }
+
+    case "leads.restore": {
+      const id = str(payload.id);
+      const lead = s.archived.find((l) => l.id === id);
+      if (!lead) {
+        throw new MockError(
+          "VALIDATION_ERROR",
+          `Lead ${id} tidak sedang dihapus`,
+        );
+      }
+      s.archived.splice(s.archived.indexOf(lead), 1);
+      s.leads.push(lead);
+      touch(lead);
+      recountSales();
+      const activity = addActivity(
+        lead.id,
+        "note",
+        "Lead dipulihkan dari arsip",
+        "system",
+      );
+      return { lead, activity };
     }
 
     case "activities.create": {

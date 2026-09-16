@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { LeadDetail } from "@/components/lead/detail";
+import { LeadDetailPage } from "@/components/lead/detail-page";
 import { Topbar } from "@/components/shell/topbar";
 
 /** `params` berbentuk Promise di Next.js 16 — akses sinkron sudah tidak jalan. */
@@ -19,7 +19,7 @@ export default async function LeadPage(props: PageProps<"/leads/[id]">) {
             ← Kembali ke papan
           </Link>
         </div>
-        <LeadDetail leadId={id} showPageLink={false} />
+        <LeadDetailPage leadId={id} />
       </main>
     </Suspense>
   );
