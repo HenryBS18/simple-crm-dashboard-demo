@@ -247,7 +247,7 @@ Run: `mcp__n8n__search_data_tables` dengan `query: "crm_seed"`.
 
 Expected: tiga tabel muncul dengan kolom sesuai Step 1.
 
-Jumlah barisnya diverifikasi di Task 2 Step 6, saat workflow membacanya — MCP tidak punya tool baca baris.
+Jumlah barisnya diverifikasi di Task 2 Step 13, saat workflow membacanya — MCP tidak punya tool baca baris.
 
 - [ ] **Step 6: Commit**
 
@@ -633,7 +633,72 @@ return [{ json: { data: {
 
 `deleted.prospects` selalu 0 karena prospek di-update, bukan dihapus; jumlah yang dikembalikan ke `new` muncul di `inserted.prospects`.
 
-- [ ] **Step 8: Periksa sintaks dan larangan SDK secara lokal**
+- [ ] **Step 8: Rangkai grafnya**
+
+Tanpa langkah ini berkasnya hanya kumpulan node tanpa workflow. Urutannya mengikat: validasi sebelum penghapusan, sales sebelum lead, lead sebelum activity.
+
+```js
+export default workflow("crm-demo-reset", "CRM Demo Reset")
+  .add(webhookTrigger)
+  .to(loadConfig)
+  .to(authParse)
+  .to(
+    requestValid
+      .onTrue(
+        loadSeedSales.to(
+          loadSeedLeads.to(
+            loadSeedActivities.to(
+              planReset.to(
+                resetValid
+                  .onTrue(
+                    deleteLeads.to(
+                      deleteActivities.to(
+                        deleteSales.to(
+                          deleteTasks.to(
+                            resetProspects.to(
+                              emitSeedSales.to(
+                                insertSales.to(
+                                  emitSeedLeads.to(
+                                    insertLeads.to(
+                                      emitSeedActivities.to(
+                                        insertActivities.to(
+                                          countLeadPerSales.to(
+                                            updateSalesCount.to(
+                                              shapeResetResult,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                  .onFalse(formatResponse),
+              ),
+            ),
+          ),
+        ),
+      )
+      .onFalse(formatResponse),
+  )
+  .add(shapeResetResult)
+  .to(formatResponse)
+  .add(formatResponse)
+  .to(respond)
+  .add(noteWrites);
+```
+
+Tambahkan satu sticky `noteWrites` yang menerangkan batas tulis: workflow ini menghapus `crm_leads`, `crm_activities`, `crm_sales`, `crm_ai_tasks` dan mengembalikan `crm_prospects` ke `new`; `crm_config` tidak pernah disentuh.
+
+Perhatikan `.onFalse(formatResponse)` muncul dua kali — cabang auth gagal dan cabang `Reset Valid?` gagal keduanya langsung ke pembentuk balasan, persis pola `Decide Valid?` di AI Gateway.
+
+- [ ] **Step 9: Periksa sintaks dan larangan SDK secara lokal**
 
 Run:
 ```bash
@@ -648,11 +713,11 @@ for (const [k,re] of Object.entries({fn:/(^|[^.\w])function\s+\w*\s*\(/g, arrow:
 ```
 Expected: `SYNTAX OK`, lalu `fn 0`, `arrow 0`, `map 0`, `reduce 0`, `filter 0`.
 
-- [ ] **Step 9: Deploy dan publish**
+- [ ] **Step 10: Deploy dan publish**
 
 `mcp__n8n__create_workflow_from_code` dengan `projectId: "jybGqjoYSN755zQt"`, `folderId: "Yek3LEEHwKm9Dyv9"`, `name: "CRM Demo Reset"`, dan isi berkas. Lalu `mcp__n8n__publish_workflow`.
 
-- [ ] **Step 10: Uji penjaga — konfirmasi salah**
+- [ ] **Step 11: Uji penjaga — konfirmasi salah**
 
 ```bash
 KEY=$(grep '^N8N_CRM_API_KEY=' .env.local | cut -d= -f2)
@@ -669,7 +734,7 @@ curl -s -X POST http://localhost:3000/api/crm -H 'content-type: application/json
 ```
 Expected: jumlah lead masih 18 (belum direset).
 
-- [ ] **Step 11: Uji reset sungguhan**
+- [ ] **Step 12: Uji reset sungguhan**
 
 ```bash
 curl -s -X POST https://n8n.withmiautomation.com/webhook/simple-crm-demo-reset \
@@ -678,7 +743,7 @@ curl -s -X POST https://n8n.withmiautomation.com/webhook/simple-crm-demo-reset \
 ```
 Expected: `ok: true`, `inserted.leads` = 10, `inserted.sales` = 4, `inserted.activities` = 33, `inserted.prospects` = 24.
 
-- [ ] **Step 12: Verifikasi hasilnya**
+- [ ] **Step 13: Verifikasi hasilnya**
 
 ```bash
 curl -s -X POST http://localhost:3000/api/crm -H 'content-type: application/json' \
@@ -721,11 +786,11 @@ curl -s -X POST http://localhost:3000/api/crm -H 'content-type: application/json
 ```
 Expected: 4 sales, dan jumlah `lead_count` keseluruhan = 10, cocok dengan sebaran `owner_name` di `leads.list`.
 
-- [ ] **Step 13: Uji idempotensi**
+- [ ] **Step 14: Uji idempotensi**
 
-Jalankan Step 11 sekali lagi. Expected: angka yang sama persis. Lalu ulangi Step 12 — hasilnya harus identik kecuali ID baris naik.
+Jalankan Step 12 sekali lagi. Expected: angka yang sama persis. Lalu ulangi Step 13 — hasilnya harus identik kecuali ID baris naik.
 
-- [ ] **Step 14: Dokumentasikan dan commit**
+- [ ] **Step 15: Dokumentasikan dan commit**
 
 Tambahkan bagian `demo.reset` di `n8n/API.md`: URL webhook, payload, bentuk balasan, daftar tabel seed beserta ID-nya, dan catatan bahwa prospek di-update bukan dihapus.
 
@@ -853,7 +918,7 @@ curl -s -D - -o /tmp/b -X POST http://localhost:3000/api/crm \
   -d '{"action":"demo.reset","payload":{"confirm":"RESET"}}' | grep -i '^HTTP\|^x-crm'
 cat /tmp/b
 ```
-Expected: `HTTP/1.1 200`, `x-crm-source: n8n`, body `ok: true` dengan angka seperti Task 2 Step 11.
+Expected: `HTTP/1.1 200`, `x-crm-source: n8n`, body `ok: true` dengan angka seperti Task 2 Step 12.
 
 Lalu uji penolakan:
 ```bash
