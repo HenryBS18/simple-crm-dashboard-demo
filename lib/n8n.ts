@@ -22,13 +22,15 @@ export type N8nOutcome =
  * tab Agen AI yang jatuh ke data contoh — papan tetap live.
  */
 function urlFor(action: string): string | undefined {
-  return action.startsWith("ai.")
-    ? process.env.N8N_CRM_AI_URL
-    : process.env.N8N_CRM_URL;
+  if (action.startsWith("ai.")) return process.env.N8N_CRM_AI_URL;
+  if (action.startsWith("demo.")) return process.env.N8N_CRM_RESET_URL;
+  return process.env.N8N_CRM_URL;
 }
 
 function urlNameFor(action: string): string {
-  return action.startsWith("ai.") ? "N8N_CRM_AI_URL" : "N8N_CRM_URL";
+  if (action.startsWith("ai.")) return "N8N_CRM_AI_URL";
+  if (action.startsWith("demo.")) return "N8N_CRM_RESET_URL";
+  return "N8N_CRM_URL";
 }
 
 export function n8nConfigured(action: string): boolean {

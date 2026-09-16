@@ -443,6 +443,31 @@ export function useDecideAiTask() {
   });
 }
 
+/* ── Reset demo ──────────────────────────────────────────────────────────── */
+
+export function useResetDemo() {
+  const client = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => crm.resetDemo(),
+
+    onSuccess: (data) => {
+      // Reset menyentuh setiap tabel; tidak ada cache yang masih sahih.
+      client.clear();
+      const i = data.inserted ?? {};
+      toast.success(
+        `Data demo dikembalikan: ${i.leads ?? 0} lead, ${i.activities ?? 0} activity, ${i.sales ?? 0} sales.`,
+      );
+    },
+
+    onError: (error) => {
+      const message =
+        error instanceof CrmError ? error.message : "Reset gagal dijalankan.";
+      toast.error(message);
+    },
+  });
+}
+
 export function useDraftFollowup() {
   return useMutation({
     mutationFn: (payload: PayloadOf<"ai.draft.followup">) =>

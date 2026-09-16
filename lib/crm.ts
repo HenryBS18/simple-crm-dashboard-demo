@@ -156,3 +156,7 @@ export const createAiTask = (payload: PayloadOf<"ai.tasks.create">) =>
 
 export const decideAiTask = (payload: PayloadOf<"ai.tasks.decide">) =>
   callCrm("ai.tasks.decide", payload);
+
+/* ── Reset demo ──────────────────────────────────────────────────────────── */
+
+export const resetDemo = () => callCrm("demo.reset", { confirm: "RESET" });

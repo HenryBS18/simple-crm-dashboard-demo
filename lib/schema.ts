@@ -520,6 +520,24 @@ const aiTasksDecideData = z.object({
   result: loose.nullable().catch(null),
 });
 
+/* ── Reset demo ──────────────────────────────────────────────────────────── */
+
+const demoResetPayload = z.object({ confirm: z.literal("RESET") });
+
+const demoResetCounts = z.object({
+  leads: z.coerce.number().catch(0),
+  activities: z.coerce.number().catch(0),
+  sales: z.coerce.number().catch(0),
+  prospects: z.coerce.number().catch(0),
+  aiTasks: z.coerce.number().catch(0),
+});
+
+const demoResetData = z.object({
+  seededAt: text,
+  deleted: demoResetCounts,
+  inserted: demoResetCounts.partial().catch({}),
+});
+
 /* Satu peta yang mengunci tipe payload dan tipe data untuk setiap action.
    callCrm dan seluruh wrapper di lib/crm.ts diketik dari sini. */
 export const ACTIONS = {
@@ -564,6 +582,9 @@ export const ACTIONS = {
   },
   "ai.tasks.create": { payload: aiTasksCreatePayload, data: aiTasksCreateData },
   "ai.tasks.decide": { payload: aiTasksDecidePayload, data: aiTasksDecideData },
+  /* Action reset dilayani gateway n8n ketiga (`CRM Demo Reset`). Prefiks
+     `demo.` yang dipakai `lib/n8n.ts` untuk memilih URL. */
+  "demo.reset": { payload: demoResetPayload, data: demoResetData },
 } as const;
 
 export type CrmAction = keyof typeof ACTIONS;
