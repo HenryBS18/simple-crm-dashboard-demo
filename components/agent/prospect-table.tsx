@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { Check, ExternalLink } from "lucide-react";
-import { formatPhone } from "@/lib/format";
+import { formatPhone, relativeTime } from "@/lib/format";
 import type { ProspectCandidate } from "@/lib/schema";
 
 /**
@@ -14,15 +14,25 @@ import type { ProspectCandidate } from "@/lib/schema";
 export function ProspectTable({
   candidates,
   selected,
+  rejectedAt,
+  failedAt,
   onToggle,
   onToggleAll,
 }: {
   candidates: ProspectCandidate[];
   selected: Set<string>;
+  /** prospectId -> kapan usulan yang memuatnya ditolak. */
+  rejectedAt: Map<string, string>;
+  /** prospectId -> kapan usulan yang memuatnya gagal dijalankan. */
+  failedAt: Map<string, string>;
   onToggle: (id: string) => void;
   onToggleAll: () => void;
 }) {
-  const selectable = candidates.filter((c) => !c.alreadyInCrm);
+  // Sengaja tidak sama dengan baris yang bisa dicentang manual: yang pernah
+  // ditolak dilewati "pilih semua", tapi tetap boleh dipilih satu per satu.
+  const selectable = candidates.filter(
+    (c) => !c.alreadyInCrm && !rejectedAt.has(c.prospectId),
+  );
   const allSelected =
     selectable.length > 0 &&
     selectable.every((c) => selected.has(c.prospectId));
@@ -35,7 +45,7 @@ export function ProspectTable({
             <CheckBox
               checked={allSelected}
               onChange={onToggleAll}
-              label="Pilih semua prospek yang belum ada di CRM"
+              label="Pilih semua prospek yang belum ada di CRM dan belum pernah ditolak"
               disabled={selectable.length === 0}
             />
           </Th>
@@ -53,6 +63,8 @@ export function ProspectTable({
             candidate={candidate}
             index={index}
             checked={selected.has(candidate.prospectId)}
+            rejectedAt={rejectedAt.get(candidate.prospectId)}
+            failedAt={failedAt.get(candidate.prospectId)}
             onToggle={() => onToggle(candidate.prospectId)}
           />
         ))}
@@ -65,13 +77,19 @@ function Row({
   candidate,
   index,
   checked,
+  rejectedAt,
+  failedAt,
   onToggle,
 }: {
   candidate: ProspectCandidate;
   index: number;
   checked: boolean;
+  rejectedAt?: string;
+  failedAt?: string;
   onToggle: () => void;
 }) {
+  // Riwayat keputusan tidak mengunci baris. Menolak satu usulan bukan vonis
+  // atas prospeknya, dan tidak ada layar lain untuk membatalkannya.
   const locked = candidate.alreadyInCrm;
 
   return (
@@ -117,6 +135,16 @@ function Row({
         {candidate.matchedOn.length > 0 ? (
           <p className="mt-1 type-micro text-b2b">
             Cocok lewat {candidate.matchedOn.join(", ")}
+          </p>
+        ) : null}
+        {rejectedAt ? (
+          <p className="mt-1 type-micro text-ink-soft">
+            Pernah ditolak · {relativeTime(rejectedAt)}
+          </p>
+        ) : null}
+        {failedAt ? (
+          <p className="mt-1 type-micro text-signal">
+            Percobaan sebelumnya gagal · {relativeTime(failedAt)}
           </p>
         ) : null}
       </Td>

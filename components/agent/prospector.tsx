@@ -2,13 +2,14 @@
 
 import { cn } from "cn";
 import { Check, Loader2, Search } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ProspectTable } from "@/components/agent/prospect-table";
 import { BoardMessage } from "@/components/board/board";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCreateAiTask, useProspectSearch } from "@/lib/queries";
+import { prospectDecisions } from "@/lib/prospects";
+import { useAiTasks, useCreateAiTask, useProspectSearch } from "@/lib/queries";
 import type { DataOf } from "@/lib/schema";
 
 type SearchResult = DataOf<"ai.prospect.search">;
@@ -17,6 +18,9 @@ type Bootstrap = DataOf<"ai.bootstrap">;
 export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
   const search = useProspectSearch();
   const queue = useCreateAiTask();
+  // Query key-nya sama dengan panel antrian di sebelah, jadi ini memakai cache
+  // yang sudah ada — dan ikut segar sendiri tiap usulan dibuat atau diputuskan.
+  const tasks = useAiTasks();
 
   const [query, setQuery] = useState("");
   const [area, setArea] = useState("");
@@ -26,6 +30,37 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
 
   const areas = bootstrap?.areas ?? [];
   const categories = bootstrap?.categories ?? [];
+
+  const decisions = useMemo(
+    () => prospectDecisions(tasks.data?.items ?? []),
+    [tasks.data],
+  );
+
+  /** Yang sudah mengantri atau sudah jadi lead disisihkan di sini, bukan di
+      n8n: `ai.prospect.search` hanya mencocokkan nomor dengan `crm_leads` dan
+      tidak pernah membaca `crm_ai_tasks`. */
+  const visible = useMemo(
+    () =>
+      (result?.candidates ?? []).filter(
+        (candidate) => !decisions.hidden.has(candidate.prospectId),
+      ),
+    [result, decisions],
+  );
+  const hiddenCount = (result?.candidates.length ?? 0) - visible.length;
+
+  /** Pilihan bisa basi: prospek yang sama dapat diantrikan dari tab lain selagi
+      hasil ini masih di layar. Yang sudah tidak bisa dipilih jangan ikut
+      terhitung, apalagi ikut terkirim. */
+  const activeSelected = useMemo(
+    () =>
+      visible
+        .filter(
+          (candidate) =>
+            !candidate.alreadyInCrm && selected.has(candidate.prospectId),
+        )
+        .map((candidate) => candidate.prospectId),
+    [visible, selected],
+  );
 
   function run() {
     setResult(null);
@@ -50,15 +85,24 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
     });
   }
 
+  /** "Pilih semua" melewati yang pernah ditolak: keputusan itu diambil sadar,
+      jadi tidak boleh dibatalkan oleh satu klik borongan. Mencentangnya satu
+      per satu tetap boleh. */
   function toggleAll() {
-    const selectable = (result?.candidates ?? []).filter(
-      (c) => !c.alreadyInCrm,
+    const selectable = visible.filter(
+      (c) => !c.alreadyInCrm && !decisions.rejectedAt.has(c.prospectId),
     );
     setSelected((current) =>
       selectable.every((c) => current.has(c.prospectId))
         ? new Set()
         : new Set(selectable.map((c) => c.prospectId)),
     );
+  }
+
+  function clearFilters() {
+    setArea("");
+    setCategory("");
+    setQuery("");
   }
 
   return (
@@ -71,8 +115,9 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
           <p className="mt-0.5 text-xs leading-5 text-ink-soft">
             Agen menelusuri kolam prospek penginapan — daftar di luar CRM — lalu
             menandai yang nomornya sudah terdaftar supaya tidak terpilih dua
-            kali, dan memberi skor. Hasilnya belum ditulis ke mana pun sampai
-            Anda menyetujuinya di antrian sebelah.
+            kali, dan memberi skor. Yang sudah Anda antrikan ikut disisihkan.
+            Hasilnya belum ditulis ke mana pun sampai Anda menyetujuinya di
+            antrian sebelah.
           </p>
         </div>
 
@@ -121,25 +166,30 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
           ))}
         </div>
       ) : result ? (
-        result.candidates.length === 0 ? (
-          <BoardMessage
-            title="Tidak ada prospek yang cocok."
-            body="Longgarkan kata kunci, atau lepas filter area dan kategori."
-            action={{
-              label: "Bersihkan filter",
-              onClick: () => {
-                setArea("");
-                setCategory("");
-                setQuery("");
-              },
-            }}
-          />
+        visible.length === 0 ? (
+          // Habis karena sudah diantrikan adalah cerita lain daripada tidak ada
+          // yang cocok — membersihkan filter tidak akan mengembalikannya.
+          hiddenCount > 0 ? (
+            <BoardMessage
+              title="Semua kandidat yang cocok sudah di antrian atau sudah jadi lead."
+              body="Putuskan dulu usulan di antrian sebelah, atau longgarkan filter untuk menelusuri kolam yang lain."
+              action={{ label: "Bersihkan filter", onClick: clearFilters }}
+            />
+          ) : (
+            <BoardMessage
+              title="Tidak ada prospek yang cocok."
+              body="Longgarkan kata kunci, atau lepas filter area dan kategori."
+              action={{ label: "Bersihkan filter", onClick: clearFilters }}
+            />
+          )
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-auto border-t border-line">
               <ProspectTable
-                candidates={result.candidates}
+                candidates={visible}
                 selected={selected}
+                rejectedAt={decisions.rejectedAt}
+                failedAt={decisions.failedAt}
                 onToggle={toggle}
                 onToggleAll={toggleAll}
               />
@@ -147,19 +197,25 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
 
             <footer className="flex items-center gap-3 border-t border-line px-6 py-3">
               <span className="text-xs text-ink-soft">
-                {selected.size > 0
-                  ? `${selected.size} prospek dipilih`
-                  : `${result.returned} dari ${result.total} kandidat ditampilkan`}
+                {activeSelected.length > 0
+                  ? `${activeSelected.length} prospek dipilih`
+                  : // Yang disisihkan harus ikut disebut, kalau tidak angka ini
+                    // tidak cocok dengan jumlah baris di atasnya.
+                    `${visible.length} dari ${result.total} kandidat ditampilkan${
+                      hiddenCount > 0
+                        ? ` · ${hiddenCount} sudah di antrian`
+                        : ""
+                    }`}
               </span>
               <Button
                 size="sm"
                 className="ml-auto"
-                disabled={selected.size === 0 || queue.isPending}
+                disabled={activeSelected.length === 0 || queue.isPending}
                 onClick={() =>
                   queue.mutate(
                     {
                       kind: "prospect_batch",
-                      prospectIds: [...selected],
+                      prospectIds: activeSelected,
                       actor: "Operator",
                     },
                     { onSuccess: () => setSelected(new Set()) },
@@ -169,7 +225,7 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
                 <Check aria-hidden />
                 {queue.isPending
                   ? "Mengantrikan…"
-                  : `Antrikan ${selected.size || ""} untuk persetujuan`.trim()}
+                  : `Antrikan ${activeSelected.length || ""} untuk persetujuan`.trim()}
               </Button>
             </footer>
           </>

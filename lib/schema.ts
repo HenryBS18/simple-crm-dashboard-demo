@@ -378,6 +378,9 @@ export const prospectBriefSchema = z.object({
 });
 
 export const prospectBatchPayloadSchema = z.object({
+  // Tugas lama hanya menyimpan id; yang baru menyimpan keduanya. Dua-duanya
+  // dibaca supaya penyaringan di prospektor tidak bolong untuk tugas lama.
+  prospectIds: z.array(z.string()).catch([]),
   prospects: z.array(prospectBriefSchema).catch([]),
 });
 
