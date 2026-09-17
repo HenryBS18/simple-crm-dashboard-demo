@@ -61,7 +61,7 @@ Yang hilang: kalau seseorang menghapus baris `crm_prospects` secara manual, rese
 | `lib/queries.ts` | `useResetDemo()`; pencabutan `useCrmSource`. |
 | `lib/n8n.ts` | Cabang prefiks `demo.`; pencabutan `demoModeForced()`. |
 | `app/api/crm/route.ts` | Pencabutan fallback mock; 503 jujur. |
-| `components/shell/reset-dialog.tsx` | **Baru.** Dialog konfirmasi ketik-ulang. |
+| `components/shell/reset-dialog.tsx` | **Baru.** Modal konfirmasi reset. |
 | `components/shell/topbar.tsx` | Tombol reset; pencabutan `DemoBadge`. |
 | `components/shell/workspace.tsx` | Pencabutan pemakaian `useCrmSource`. |
 | `lib/mock.ts`, `lib/ai-rules.ts` | **Dihapus.** |
@@ -962,7 +962,7 @@ git commit -m "feat: action demo.reset dan routing gateway ketiga"
 
 ## Task 4: Tombol dan dialog konfirmasi
 
-Sasaran: tombol reset di topbar dengan konfirmasi ketik-ulang.
+Sasaran: tombol reset di topbar dengan modal konfirmasi.
 
 **Files:**
 - Create: `components/shell/reset-dialog.tsx`
@@ -990,15 +990,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useLeads, useResetDemo } from "@/lib/queries";
-
-const PHRASE = "RESET";
 
 export function ResetDialog() {
   const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState("");
   const reset = useResetDemo();
   const leads = useLeads();
 
@@ -1006,13 +1001,7 @@ export function ResetDialog() {
   const leadCount = leads.data?.total ?? 0;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setTyped("");
-      }}
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           Reset demo
@@ -1028,26 +1017,13 @@ export function ResetDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-2">
-          <Label htmlFor="reset-confirm">
-            Ketik <span className="font-mono font-medium">{PHRASE}</span> untuk
-            melanjutkan
-          </Label>
-          <Input
-            id="reset-confirm"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
-
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>
             Batal
           </Button>
           <Button
             variant="destructive"
-            disabled={typed !== PHRASE || reset.isPending}
+            disabled={reset.isPending}
             onClick={() =>
               reset.mutate(undefined, { onSuccess: () => setOpen(false) })
             }
@@ -1084,11 +1060,10 @@ Expected: lolos tanpa error tipe.
 Buka `http://localhost:3000`. Periksa berurutan:
 
 1. Tombol "Reset demo" muncul di kanan topbar, di keempat tab
-2. Klik → dialog terbuka, tombol "Reset sekarang" **mati**
-3. Ketik `rese` → masih mati; ketik `RESET` → hidup
-4. Klik → toast sukses menyebut jumlah, dialog tertutup
+2. Klik → modal terbuka tanpa isian teks, tombol "Reset sekarang" **hidup**
+3. "Batal" / Esc → modal tertutup tanpa efek samping
+4. Klik → tombol mati dan berlabel "Mereset…" selama request, lalu toast sukses menyebut jumlah dan modal tertutup
 5. Papan, tabel, halaman sales, dan tab Agen AI semuanya menampilkan data seed **tanpa refresh manual**
-6. Tutup dialog lalu buka lagi → kolom isian kosong, tombol mati lagi
 
 - [ ] **Step 5: Format dan commit**
 
@@ -1098,6 +1073,11 @@ npx biome check components
 git add components/shell
 git commit -m "feat: tombol reset demo dengan konfirmasi ketik ulang"
 ```
+
+> **Susulan.** Konfirmasi ketik-ulang dicabut setelah Task 4 dijalankan — modal
+> kini hanya peringatan dengan tombol destructive. Cuplikan dan kriteria di atas
+> sudah disesuaikan; pesan commit di Step 5 dibiarkan apa adanya karena merekam
+> commit `b88f934` yang benar-benar dijalankan saat itu.
 
 ---
 

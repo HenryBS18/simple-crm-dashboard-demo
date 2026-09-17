@@ -34,7 +34,7 @@ frontend yang tidak lagi menyimpan data contoh apa pun.
 |---|---|
 | Sasaran reset | Keadaan live saat ini dikurangi jejak uji coba, direkam jadi tabel seed |
 | Tempat reset berjalan | Workflow n8n baru dan terpisah |
-| Pengaman | Dialog konfirmasi dengan ketik ulang `RESET` |
+| Pengaman | Dialog konfirmasi dengan tombol destructive |
 | Sumber seed | Data table n8n, bukan berkas di repo |
 | Mock di frontend | Dicabut, bersama `lib/ai-rules.ts` |
 
@@ -145,8 +145,10 @@ dari `ai-rules`), `lib/crm.ts` (`resetDemo()`), `lib/queries.ts`
 
 ## UI
 
-Tombol di `components/shell/topbar.tsx`, membuka dialog yang menuntut ketik ulang
-`RESET`. Tombol konfirmasi mati sampai teksnya persis cocok.
+Tombol di `components/shell/topbar.tsx`, membuka modal konfirmasi. Tidak ada
+isian teks: tombol "Reset sekarang" langsung aktif dan hanya mati selama
+request berjalan. Nilai `confirm: "RESET"` yang dituntut kontrak dikirim
+otomatis oleh `resetDemo()` di `lib/crm.ts`.
 
 Dialog menyebut apa yang akan hilang dengan angka, bukan peringatan umum —
 misalnya "18 lead, 43 activity, dan 4 tugas agen akan dihapus". Angkanya diambil
@@ -230,7 +232,7 @@ Tidak perlu workflow hapus sementara.
 
 **Dashboard:**
 
-10. Tombol reset: konfirmasi tanpa mengetik `RESET` → tombol mati
+10. Tombol reset: modal terbuka tanpa isian teks; "Batal"/Esc menutup tanpa efek
 11. Reset dari UI → papan, tabel lead, halaman sales, dan tab Agen AI semuanya
     menampilkan data seed tanpa perlu refresh manual
 12. `N8N_CRM_URL` dikosongkan → `/api/crm` membalas **503**, bukan data contoh;
@@ -241,9 +243,9 @@ Tidak perlu workflow hapus sementara.
 
 ## Yang sengaja tidak dikerjakan
 
-- **Pratinjau `dryRun`.** Node `deleteRows` mendukungnya, tapi dialog ketik-ulang
-  sudah cukup sebagai pengaman. Menambah mode pratinjau berarti satu cabang lagi
-  yang harus diuji tanpa pemakai yang memintanya.
+- **Pratinjau `dryRun`.** Node `deleteRows` mendukungnya, tapi modal konfirmasi
+  sudah cukup sebagai pengaman untuk dashboard demo. Menambah mode pratinjau
+  berarti satu cabang lagi yang harus diuji tanpa pemakai yang memintanya.
 - **Reset selektif per tabel.** Semua atau tidak sama sekali. Reset separuh
   menghasilkan activity yatim dan lebih berbahaya daripada berguna.
 - **Snapshot/undo.** Reset tidak bisa dibatalkan. Kalau nanti dibutuhkan, itu

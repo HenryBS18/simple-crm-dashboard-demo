@@ -12,16 +12,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { dropIdParams } from "@/lib/filters";
 import { useLeads, useResetDemo } from "@/lib/queries";
 
-const PHRASE = "RESET";
-
 export function ResetDialog() {
   const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState("");
   const reset = useResetDemo();
   const leads = useLeads();
   const router = useRouter();
@@ -43,13 +38,7 @@ export function ResetDialog() {
   const leadCount = leads.data?.total ?? 0;
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setTyped("");
-      }}
-    >
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           Reset demo
@@ -66,26 +55,13 @@ export function ResetDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-2">
-          <Label htmlFor="reset-confirm">
-            Ketik <span className="font-mono font-medium">{PHRASE}</span> untuk
-            melanjutkan
-          </Label>
-          <Input
-            id="reset-confirm"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            autoComplete="off"
-          />
-        </div>
-
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>
             Batal
           </Button>
           <Button
             variant="destructive"
-            disabled={typed !== PHRASE || reset.isPending}
+            disabled={reset.isPending}
             onClick={() =>
               reset.mutate(undefined, {
                 onSuccess: () => {

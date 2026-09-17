@@ -45,8 +45,10 @@ Data demo di n8n dikembalikan lewat tombol Reset di topbar (aksi
 `demo.reset`). Reset ini menghapus seluruh baris `crm_leads`, `crm_activities`,
 `crm_sales`, `crm_prospects`, `crm_ai_tasks`, lalu menanam ulang dari tabel
 seed di n8n — 10 lead, 4 sales, 26 activity, 24 prospek berstatus `new`, dan
-antrian tugas agen kosong. Konfirmasi ketik ulang "RESET" divalidasi dua
-lapis: zod di klien dan Code node di workflow n8n.
+antrian tugas agen kosong. Tombol hanya membuka modal konfirmasi; nilai
+`confirm: "RESET"` yang dituntut kontrak dikirim otomatis oleh klien dan tetap
+divalidasi dua lapis — zod di klien dan Code node di workflow n8n — supaya
+pemanggilan langsung lewat curl tidak bisa mereset tanpa sengaja.
 
 ## Agen AI
 
