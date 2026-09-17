@@ -1,8 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ExternalLink, Trash2 } from "lucide-react";
-import Link from "next/link";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ActivityTimeline } from "@/components/lead/activity-timeline";
 import { ContactBlock } from "@/components/lead/contact-block";
@@ -31,13 +30,10 @@ import { resolveStages, STAGE_LABELS } from "@/lib/stage";
 
 export function LeadDetail({
   leadId,
-  showPageLink = true,
   onDeleted,
 }: {
   leadId: string;
-  showPageLink?: boolean;
-  /** Panel ini hidup di drawer dan di halaman penuh, dan keduanya harus
-      menyingkir dengan cara berbeda setelah lead-nya dihapus. */
+  /** Drawer harus menyingkir sendiri setelah lead-nya dihapus. */
   onDeleted?: () => void;
 }) {
   const { data, isPending, isError, refetch } = useLead(leadId);
@@ -77,20 +73,11 @@ export function LeadDetail({
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Identitas */}
       <div className="px-5 pb-4 pt-1">
-        <div className={cn("flex items-start gap-2", showPageLink && "pr-7")}>
+        <div className="flex items-start gap-2">
           {lead.is_stale ? <StaleDot className="mt-3" /> : null}
           <h1 className="min-w-0 flex-1 text-xl font-semibold leading-7 tracking-tight text-ink">
             {lead.name}
           </h1>
-          {showPageLink ? (
-            <Link
-              href={`/leads/${lead.id}`}
-              className="mt-1 inline-flex items-center gap-1 type-micro text-ink-soft hover:text-ink"
-            >
-              Halaman penuh
-              <ExternalLink aria-hidden className="size-3" />
-            </Link>
-          ) : null}
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-2">

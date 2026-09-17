@@ -162,7 +162,7 @@ function TaskOutcome({ task }: { task: AiTask }) {
             return (
               <li key={lead.id} className="type-micro leading-4 text-ink-soft">
                 <Link
-                  href={`/leads/${lead.id}`}
+                  href={`/?lead=${lead.id}`}
                   className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink"
                 >
                   {lead.name}
@@ -185,7 +185,7 @@ function TaskOutcome({ task }: { task: AiTask }) {
     return (
       <p className="mt-1 text-xs leading-5 text-ink">
         <Link
-          href={`/leads/${move.lead.id}`}
+          href={`/?lead=${move.lead.id}`}
           className="font-medium underline decoration-line-strong underline-offset-2 hover:decoration-ink"
         >
           {move.lead.name}
@@ -200,7 +200,7 @@ function TaskOutcome({ task }: { task: AiTask }) {
       Pesan tercatat di riwayat{" "}
       {task.leadId ? (
         <Link
-          href={`/leads/${task.leadId}`}
+          href={`/?lead=${task.leadId}`}
           className="font-medium underline decoration-line-strong underline-offset-2 hover:decoration-ink"
         >
           {task.leadName}

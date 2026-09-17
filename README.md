@@ -95,14 +95,13 @@ Status workflow n8n-nya ada di [`n8n/API.md`](n8n/API.md) bagian
 app/
   page.tsx                papan kanban (layar utama)
   leads/page.tsx          tabel lead
-  leads/[id]/page.tsx     detail yang bisa di-share (params adalah Promise)
   sales/page.tsx          kelola sales (tambah, ubah, aktif/nonaktif)
   agent/page.tsx          tab Agen AI: prospektor + antrian persetujuan
   api/crm/route.ts        proxy ke n8n, 503 jujur kalau backend mati
 components/
   agent/                  prospektor, tabel kandidat, antrian, dialog draf WA
   board/                  papan, kolom, kartu, menu "Pindahkan ke"
-  lead/                   panel detail (dipakai drawer dan halaman), modal tambah lead
+  lead/                   panel detail (dipakai drawer), modal tambah lead
   leads/                  tabel
   sales/                  tabel sales + dialog tambah/ubah
   shell/                  topbar, filter, strip angka, dialog reset demo
