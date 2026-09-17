@@ -275,6 +275,21 @@ function listAnd(v) {
   if (v.length <= 1) return v[0] || '';
   return v.slice(0, -1).join(', ') + ' dan ' + v[v.length - 1];
 }
+// Nama prospek ikut disimpan di payload tugas, bukan cuma id-nya: kartu antrian
+// dibaca berhari-hari setelah hasil pencarian yang melahirkannya hilang, dan
+// "Tambahkan 3 prospek pilihan" tidak memberi apa pun untuk disetujui.
+function prospectBrief(rows) {
+  return rows.map(function (r) {
+    return { id: String(r.id), name: r.name, area: AREA_LABELS[r.area] || r.area, score: scoreProspect(r).score };
+  });
+}
+function batchTitle(brief) {
+  var names = brief.map(function (b) { return excerpt(b.name, 28); });
+  if (names.length === 0) return 'Tambahkan prospek ke CRM';
+  if (names.length === 1) return 'Tambahkan ' + names[0] + ' ke CRM';
+  if (names.length === 2) return 'Tambahkan ' + names[0] + ' dan ' + names[1] + ' ke CRM';
+  return 'Tambahkan ' + names[0] + ', ' + names[1] + ' +' + (names.length - 2) + ' lagi ke CRM';
+}
 function mostCommon(v) {
   var t = {};
   for (var i = 0; i < v.length; i++) t[v[i]] = (t[v[i]] || 0) + 1;
@@ -384,7 +399,7 @@ function planProspectBatch(prospects) {
     title: 'Tambahkan ' + ready.length + ' prospek ' + String(CATEGORY_LABELS[dominant] || dominant).toLowerCase() + ' area ' + listAnd(areas) + ' ke CRM',
     reason: ready.length + ' dari ' + eligible + ' prospek berskor ≥70 dan nomornya belum ada di CRM, rata-rata rating ' + idDecimal(Math.round(avgRating * 10) / 10) + ' — siap dimasukkan sebagai lead baru',
     priority: avgScore, leadId: '', leadName: '',
-    payload: { prospectIds: ready.map(function (p) { return p.id; }), source: 'auto', areaMix: uniq(ready.map(function (p) { return p.area; })) },
+    payload: { prospectIds: ready.map(function (p) { return p.id; }), prospects: prospectBrief(ready), source: 'auto', areaMix: uniq(ready.map(function (p) { return p.area; })) },
     dedupeKey: dedupeKeyFor('prospect_batch', { prospectIds: ready.map(function (p) { return p.id; }) })
   }];
 }
@@ -1010,15 +1025,16 @@ if (kind === 'prospect_batch') {
   const existing = pendingWith(key);
   if (existing) return duplicate(existing);
 
-  const scores = rows.map(function (r) { return scoreProspect(r).score; });
+  const brief = prospectBrief(rows);
+  const scores = brief.map(function (b) { return b.score; });
   const avg = Math.round(scores.reduce(function (a, b) { return a + b; }, 0) / scores.length);
   return [{ json: {
     __op: 'insert', __summary: summary,
     kind: kind, status: 'pending',
-    title: 'Tambahkan ' + rows.length + ' prospek pilihan ke CRM',
+    title: batchTitle(brief),
     reason: 'Dipilih manual dari hasil pencarian, skor rata-rata ' + avg + '/100 — menunggu persetujuan sebelum ditulis ke crm_leads',
     priority: avg, lead_id: '', lead_name: '',
-    payload_json: JSON.stringify({ prospectIds: ids, source: 'manual', areaMix: uniq(rows.map(function (r) { return r.area; })) }),
+    payload_json: JSON.stringify({ prospectIds: ids, prospects: brief, source: 'manual', areaMix: uniq(rows.map(function (r) { return r.area; })) }),
     result_json: '', dedupe_key: key, run_id: runId, actor: actor,
     created_at: nowIso, decided_at: '', executed_at: ''
   } }];

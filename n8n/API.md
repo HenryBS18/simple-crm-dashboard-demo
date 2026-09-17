@@ -503,6 +503,38 @@ yang `approved` kurang dari 24 jam lalu. Akibatnya **klik "Cari usulan" yang
 kedua memang mengembalikan `created: 0`** — UI harus menyatakan itu, bukan diam
 saja.
 
+### `ai.tasks.create`
+
+Membuat satu tugas manual. Bentuk `payload` yang **tersimpan** di kolom
+`payload_json` — bukan payload request — berbeda per `kind`, dan dashboard
+membacanya balik lewat `task.payload`:
+
+| `kind` | `payload` tersimpan |
+|---|---|
+| `prospect_batch` | `{ prospectIds[], prospects[{ id, name, area, score }], source: "manual" \| "auto", areaMix[] }` |
+| `followup` | `{ leadId, goal, templateId, text, channel, vars }` |
+| `stage_move` | `{ leadId, from, to, note }` |
+
+`prospects[]` ada supaya kartu antrian bisa menyebut **siapa** yang diusulkan.
+Tanpa itu kartunya cuma punya id, dan id tidak bisa dinilai oleh orang yang
+menekan Setujui — `lead_id`/`lead_name` sengaja kosong untuk batch karena batch
+tidak menunjuk satu lead. `area` di situ sudah berupa label ("Lembang"), `score`
+angka 0–100 yang sama dengan kolom Skor di tabel Prospektor. Judulnya ikut
+menyebut nama: satu nama apa adanya, dua nama disambung "dan", tiga atau lebih
+jadi `"Tambahkan A, B +N lagi ke CRM"`.
+
+Tugas `prospect_batch` yang dibuat `ai.tasks.generate` memakai `payload` yang
+sama (`source: "auto"`), tapi **judulnya tetap ringkasan kategori dan area** —
+untuk batch 8 kalimat itu lebih informatif daripada dua nama, dan daftar nama
+sudah muncul di kartu.
+
+Baris yang tersimpan sebelum `prospects[]` ada tidak punya field itu; pembaca
+harus menganggapnya daftar kosong, bukan error.
+
+**Dedup:** sama dengan `ai.tasks.generate` — tugas `pending` dengan
+`dedupe_key` yang sama dikembalikan apa adanya dengan `duplicate: true`, bukan
+error, supaya klik kedua tidak menggandakan.
+
 ### `ai.tasks.decide`
 
 `overrides.text` dipakai untuk draf yang disunting operator. Tanpa itu,

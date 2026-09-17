@@ -7,10 +7,11 @@ import { DraftDialog } from "@/components/agent/draft-dialog";
 import { Button } from "@/components/ui/button";
 import { relativeTime } from "@/lib/format";
 import { useDecideAiTask } from "@/lib/queries";
-import type {
-  AiTask,
-  ProspectBatchResult,
-  StageMoveResult,
+import {
+  type AiTask,
+  type ProspectBatchResult,
+  prospectBatchPayloadSchema,
+  type StageMoveResult,
 } from "@/lib/schema";
 import { stageLabel } from "@/lib/stage";
 
@@ -71,6 +72,8 @@ export function TaskCard({ task }: { task: AiTask }) {
         {task.reason}
       </p>
 
+      <ProspectBatchList task={task} />
+
       {pending ? (
         <div className="mt-3 flex items-center gap-2">
           {task.kind === "followup" ? (
@@ -122,6 +125,33 @@ export function TaskCard({ task }: { task: AiTask }) {
         <DraftDialog task={task} open={draftOpen} onOpenChange={setDraftOpen} />
       ) : null}
     </li>
+  );
+}
+
+/** Siapa yang diusulkan, dibaca dari payload tugas — bukan dari hasil
+    pencarian, yang sudah hilang begitu halaman dimuat ulang. Sesudah disetujui
+    daftar ini diam: `TaskOutcome` menampilkan lead yang benar-benar terbentuk,
+    lengkap dengan tautannya. */
+function ProspectBatchList({ task }: { task: AiTask }) {
+  if (task.kind !== "prospect_batch" || task.status === "approved") return null;
+
+  const parsed = prospectBatchPayloadSchema.safeParse(task.payload);
+  const prospects = parsed.success ? parsed.data.prospects : [];
+  // Tugas yang dibuat sebelum n8n ikut menyimpan nama tetap tampil apa adanya,
+  // bukan jadi kartu kosong.
+  if (prospects.length === 0) return null;
+
+  return (
+    <ul className="mt-2 space-y-1">
+      {prospects.map((prospect) => (
+        <li key={prospect.id} className="type-micro leading-4 text-ink-soft">
+          <span className="font-medium text-ink">{prospect.name}</span>
+          {prospect.area ? ` · ${prospect.area}` : ""}
+          {" · "}
+          <span data-numeric>{prospect.score}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

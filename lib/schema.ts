@@ -363,8 +363,23 @@ export const agentStepSchema = z.object({
   ms: count,
 });
 
-/* Hasil `ai.tasks.decide` per jenis. Dipakai untuk mempersempit `task.result`
-   di komponen — bukan bagian dari envelope, jadi tidak dipasang di ACTIONS. */
+/* Bentuk `task.payload` dan `task.result` per jenis. Dipakai untuk
+   mempersempit dua field longgar itu di komponen — bukan bagian dari envelope,
+   jadi tidak dipasang di ACTIONS. */
+
+/** Ringkasan prospek yang ikut disimpan n8n di `payload_json` tugas
+    `prospect_batch`. Tanpa ini kartu antrian cuma punya id, dan id tidak bisa
+    dinilai oleh orang yang menekan Setujui. */
+export const prospectBriefSchema = z.object({
+  id,
+  name: text,
+  area: text,
+  score: count,
+});
+
+export const prospectBatchPayloadSchema = z.object({
+  prospects: z.array(prospectBriefSchema).catch([]),
+});
 
 export const prospectBatchResultSchema = z.object({
   kind: z.literal("prospect_batch"),
@@ -617,6 +632,7 @@ export const requestSchema = z.object({
 export type Categorization = z.infer<typeof categorizationSchema>;
 export type Assignment = z.infer<typeof assignmentSchema>;
 
+export type ProspectBrief = z.infer<typeof prospectBriefSchema>;
 export type ProspectCandidate = z.infer<typeof prospectCandidateSchema>;
 export type AiTask = z.infer<typeof aiTaskSchema>;
 export type AgentStep = z.infer<typeof agentStepSchema>;
