@@ -2,20 +2,17 @@
 
 import { cn } from "cn";
 import { Check, Loader2, Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ProspectTable } from "@/components/agent/prospect-table";
 import { BoardMessage } from "@/components/board/board";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useCreateAiTask, useProspectSearch } from "@/lib/queries";
-import type { AgentStep, DataOf } from "@/lib/schema";
+import type { DataOf } from "@/lib/schema";
 
 type SearchResult = DataOf<"ai.prospect.search">;
 type Bootstrap = DataOf<"ai.bootstrap">;
-
-/** Jeda antar langkah. Murni presentasi: durasi kerja sebenarnya ada di
-    `step.ms` dan tetap ditampilkan apa adanya di sebelah kanan tiap baris. */
-const STEP_DELAY_MS = 420;
 
 export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
   const search = useProspectSearch();
@@ -25,25 +22,13 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
   const [area, setArea] = useState("");
   const [category, setCategory] = useState("");
   const [result, setResult] = useState<SearchResult | null>(null);
-  const [shownSteps, setShownSteps] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const timers = useRef<number[]>([]);
 
   const areas = bootstrap?.areas ?? [];
   const categories = bootstrap?.categories ?? [];
-  const done = result !== null && shownSteps >= result.steps.length;
-
-  useEffect(() => {
-    return () => {
-      for (const id of timers.current) window.clearTimeout(id);
-    };
-  }, []);
 
   function run() {
-    for (const id of timers.current) window.clearTimeout(id);
-    timers.current = [];
     setResult(null);
-    setShownSteps(0);
     setSelected(new Set());
 
     search.mutate(
@@ -52,30 +37,7 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
         area: area || undefined,
         category: category || undefined,
       },
-      {
-        onSuccess: (data) => {
-          setResult(data);
-
-          // Orang yang menyetel "kurangi gerakan" tetap harus dapat hasilnya,
-          // bukan versi yang lebih lambat tanpa animasi.
-          const reduced = window.matchMedia(
-            "(prefers-reduced-motion: reduce)",
-          ).matches;
-          if (reduced) {
-            setShownSteps(data.steps.length);
-            return;
-          }
-
-          data.steps.forEach((_, index) => {
-            timers.current.push(
-              window.setTimeout(
-                () => setShownSteps(index + 1),
-                index * STEP_DELAY_MS,
-              ),
-            );
-          });
-        },
-      },
+      { onSuccess: setResult },
     );
   }
 
@@ -104,6 +66,8 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
       <div className="space-y-3 px-6 py-4">
         <div>
           <h2 className="text-sm font-semibold text-ink">Prospektor</h2>
+          {/* Setelah daftar langkah dicabut, kalimat ini satu-satunya yang
+              menjelaskan alur kerja agen di layar. */}
           <p className="mt-0.5 text-xs leading-5 text-ink-soft">
             Agen menelusuri kolam prospek penginapan — daftar di luar CRM — lalu
             menandai yang nomornya sudah terdaftar supaya tidak terpilih dua
@@ -149,15 +113,14 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
         </div>
       </div>
 
-      {result ? (
-        <StepList steps={result.steps} shown={shownSteps} />
-      ) : search.isPending ? (
-        <p className="border-t border-line px-6 py-3 text-xs text-ink-soft">
-          Agen sedang bekerja…
-        </p>
-      ) : null}
-
-      {done && result ? (
+      {search.isPending ? (
+        <div className="min-h-0 flex-1 space-y-2 overflow-hidden border-t border-line px-6 py-4">
+          {Array.from({ length: 5 }, (_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: placeholder statis
+            <Skeleton key={i} className="h-20 w-full" />
+          ))}
+        </div>
+      ) : result ? (
         result.candidates.length === 0 ? (
           <BoardMessage
             title="Tidak ada prospek yang cocok."
@@ -213,30 +176,6 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
         )
       ) : null}
     </section>
-  );
-}
-
-function StepList({ steps, shown }: { steps: AgentStep[]; shown: number }) {
-  return (
-    <ol className="border-t border-line px-6 py-3">
-      {steps.slice(0, shown).map((step) => (
-        <li
-          key={step.key}
-          className="flex animate-step-in items-baseline gap-2 py-0.5 text-xs"
-        >
-          <Check aria-hidden className="size-3 shrink-0 text-b2b" />
-          <span className="font-medium text-ink">{step.label}</span>
-          <span className="min-w-0 flex-1 truncate text-ink-soft">
-            {step.detail}
-          </span>
-          {/* Angka ini diukur di backend. Kalau nanti ditunjukkan bersama log
-              eksekusi n8n, keduanya harus bercerita sama. */}
-          <span className="font-mono type-micro text-ink-soft" data-numeric>
-            {step.ms} ms
-          </span>
-        </li>
-      ))}
-    </ol>
   );
 }
 
