@@ -41,6 +41,7 @@ export function LeadDetailDrawer() {
             onDeleted={() => write({ lead: null })}
           />
         ) : null}
+        {openLeadId ? <LeadDetail leadId={openLeadId} /> : null}
       </SheetContent>
     </Sheet>
   );

@@ -9,6 +9,10 @@ import {
 import { toast } from "sonner";
 import * as crm from "@/lib/crm";
 import { CrmError } from "@/lib/crm";
+import { useSyncExternalStore } from "react";
+import { toast } from "sonner";
+import * as crm from "@/lib/crm";
+import { crmSourceStore } from "@/lib/crm";
 import type { DataOf, Lead, PayloadOf } from "@/lib/schema";
 
 export const keys = {
@@ -61,6 +65,15 @@ export function useSalesList() {
     queryKey: keys.sales,
     queryFn: crm.listSales,
   });
+}
+
+/** Badge "Data contoh" ikut menyala kalau n8n mati di tengah demo. */
+export function useCrmSource() {
+  return useSyncExternalStore(
+    crmSourceStore.subscribe,
+    crmSourceStore.getSnapshot,
+    crmSourceStore.getServerSnapshot,
+  );
 }
 
 /* ── Tulis ───────────────────────────────────────────────────────────────── */

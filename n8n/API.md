@@ -245,6 +245,7 @@ Tanpa API key. Memakai pipeline intake yang sama, membalas
 | Workflow CRM Lead Intake | `kEy4STOjkUNhQTGv` |
 | Workflow CRM Stale Detector | `mLLbQrkqTnLKQadS` |
 | Data table crm_leads | `048bYoe3wwNXPwmS` (punya kolom `deleted_at` untuk arsip) |
+| Data table crm_leads | `048bYoe3wwNXPwmS` |
 | Data table crm_sales | `sIZNvfyMzaUA9VFD` |
 | Data table crm_activities | `hoviNVBkQPJcv3yi` |
 | Data table crm_config | `GlW1ROM8sSfdO7LA` |

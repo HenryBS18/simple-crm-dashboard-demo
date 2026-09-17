@@ -118,6 +118,18 @@
   outline-offset: 2px;
 }
 
+}
+
+/* Fokus keyboard sengaja ditulis TANPA @layer. CSS tak berlapis menang atas
+   seluruh cascade layer, termasuk utility `outline-none` milik shadcn dan
+   ring-nya yang di sini menghasilkan garis putih di atas latar putih.
+   Hasilnya satu perlakuan fokus yang sama dan selalu terlihat di semua
+   elemen: kartu, tombol ikon, field, dan menu. */
+:focus-visible {
+  outline: 2px solid var(--color-b2b);
+  outline-offset: 2px;
+}
+
 /* ── Motion ───────────────────────────────────────────────────────────────
    Hanya untuk menjelaskan perubahan: kartu mendarat, panel masuk,
    hasil kategorisasi muncul.                                              */
@@ -167,6 +179,25 @@
    gilirannya tidak berkedip muncul lalu hilang lagi. */
 .animate-row-reveal {
   animation: row-reveal 180ms cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+
+@keyframes tag-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-card-land {
+  animation: card-land 140ms ease-out;
+}
+
+.animate-tag-settle {
+  animation: tag-settle 200ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

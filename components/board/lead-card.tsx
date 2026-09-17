@@ -5,6 +5,7 @@ import { cn } from "cn";
 import { useState } from "react";
 import { MoveMenu } from "@/components/board/move-menu";
 import { DeleteLeadDialog } from "@/components/lead/delete-lead-dialog";
+import { MoveMenu } from "@/components/board/move-menu";
 import { SegmentRail, SegmentTag } from "@/components/shell/segment-tag";
 import { StaleDot, StaleNote } from "@/components/shell/stale-mark";
 import { formatPhone } from "@/lib/format";
@@ -123,6 +124,9 @@ export function LeadCard({
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
       />
+          leadName={lead.name}
+        />
+      </div>
     </div>
   );
 }

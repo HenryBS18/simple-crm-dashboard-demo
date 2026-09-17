@@ -8,6 +8,7 @@ import { StatStrip } from "@/components/shell/stat-strip";
 import { Topbar } from "@/components/shell/topbar";
 import { applyFilters, useFilters } from "@/lib/filters";
 import { useBootstrap, useLeads } from "@/lib/queries";
+import { useBootstrap, useCrmSource, useLeads } from "@/lib/queries";
 
 const DEFAULT_SOURCES = [
   "meta_ads",
@@ -27,6 +28,7 @@ export function Workspace({ children }: { children: React.ReactNode }) {
   const bootstrapQuery = useBootstrap();
   const leadsQuery = useLeads();
   const { filters } = useFilters();
+  const source = useCrmSource();
 
   const sales = bootstrapQuery.data?.sales ?? [];
   const sources = bootstrapQuery.data?.sources ?? DEFAULT_SOURCES;
@@ -43,6 +45,9 @@ export function Workspace({ children }: { children: React.ReactNode }) {
       {bootstrapQuery.isError ? (
         <p className="border-b border-line bg-signal/8 px-6 py-2 text-xs text-signal">
           Tidak bisa menghubungi backend n8n. Coba muat ulang.
+      {source === "mock" && bootstrapQuery.isError ? (
+        <p className="border-b border-line bg-signal/8 px-6 py-2 text-xs text-signal">
+          Tidak bisa menghubungi backend. Yang tampil data contoh.
         </p>
       ) : null}
 

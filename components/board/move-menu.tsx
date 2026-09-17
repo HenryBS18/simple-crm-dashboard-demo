@@ -19,6 +19,8 @@ import type { Stage, StageInfo } from "@/lib/schema";
  * yang sama dengan panel detail. Nama lead-nya terbaca dulu di dialog itu,
  * karena satu titik tiga yang salah tekan tidak boleh langsung menghilangkan
  * kartu. Toast Urungkan sesudahnya adalah lapis kedua, bukan satu-satunya.
+ * Jalur pindah tanpa drag. Wajib ada: drag di trackpad saat presentasi
+ * gampang meleset, dan di layar sempit drag praktis tidak terpakai.
  */
 export function MoveMenu({
   stages,

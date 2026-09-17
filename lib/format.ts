@@ -32,6 +32,8 @@ export function formatPhone(input: string): string {
 export function waLink(phone: string, text?: string): string {
   const base = `https://wa.me/${normalizePhone(phone)}`;
   return text ? `${base}?text=${encodeURIComponent(text)}` : base;
+export function waLink(phone: string): string {
+  return `https://wa.me/${normalizePhone(phone)}`;
 }
 
 const MINUTE = 60_000;

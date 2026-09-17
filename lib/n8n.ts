@@ -32,6 +32,12 @@ function urlNameFor(action: string): string {
   if (action.startsWith("ai.")) return "N8N_CRM_AI_URL";
   if (action.startsWith("demo.")) return "N8N_CRM_RESET_URL";
   return "N8N_CRM_URL";
+export function n8nConfigured(): boolean {
+  return Boolean(process.env.N8N_CRM_URL && process.env.N8N_CRM_API_KEY);
+}
+
+export function demoModeForced(): boolean {
+  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 }
 
 export async function callN8n(
@@ -39,11 +45,13 @@ export async function callN8n(
   payload: unknown,
 ): Promise<N8nOutcome> {
   const url = urlFor(action);
+  const url = process.env.N8N_CRM_URL;
   const apiKey = process.env.N8N_CRM_API_KEY;
   if (!url || !apiKey) {
     return {
       kind: "unavailable",
       detail: `${urlNameFor(action)} atau N8N_CRM_API_KEY belum diisi`,
+      detail: "N8N_CRM_URL atau N8N_CRM_API_KEY belum diisi",
     };
   }
 
