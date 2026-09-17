@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { dropIdParams } from "@/lib/filters";
 import { useLeads, useResetDemo } from "@/lib/queries";
 
 const PHRASE = "RESET";
@@ -22,6 +24,18 @@ export function ResetDialog() {
   const [typed, setTyped] = useState("");
   const reset = useResetDemo();
   const leads = useLeads();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // `window.location.search` dibaca di dalam handler, bukan saat render:
+  // `useSearchParams` di sini akan menggagalkan prerender /sales dan /agent,
+  // yang merender Topbar tanpa batas Suspense.
+  const clearIdParams = () => {
+    const query = dropIdParams(window.location.search);
+    router.replace(query ? `${pathname}?${query}` : pathname, {
+      scroll: false,
+    });
+  };
 
   // Angka diambil dari cache papan, bukan request tambahan. Ini jumlah yang
   // tampak di layar — bukan hitungan baris fisik di n8n, yang bisa berbeda
@@ -73,7 +87,12 @@ export function ResetDialog() {
             variant="destructive"
             disabled={typed !== PHRASE || reset.isPending}
             onClick={() =>
-              reset.mutate(undefined, { onSuccess: () => setOpen(false) })
+              reset.mutate(undefined, {
+                onSuccess: () => {
+                  setOpen(false);
+                  clearIdParams();
+                },
+              })
             }
           >
             {reset.isPending ? "Mereset…" : "Reset sekarang"}

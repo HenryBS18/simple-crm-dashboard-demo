@@ -14,6 +14,8 @@ import type { DataOf, Lead, PayloadOf } from "@/lib/schema";
 export const keys = {
   bootstrap: ["bootstrap"] as const,
   leads: ["leads"] as const,
+  /** Prefiks semua cache detail; dipakai `removeQueries` saat reset demo. */
+  leadRoot: ["lead"] as const,
   lead: (id: string) => ["lead", id] as const,
   sales: ["sales"] as const,
 };
@@ -442,8 +444,12 @@ export function useResetDemo() {
     mutationFn: () => crm.resetDemo(),
 
     onSuccess: (data) => {
-      // Reset menyentuh setiap tabel; tidak ada cache yang masih sahih.
-      client.clear();
+      // Cache detail per-ID dibuang, bukan diambil ulang: reset menghapus lalu
+      // menyisipkan ulang seluruh baris, dan drawer yang sedang menutup tidak
+      // perlu berkedip "tidak bisa dimuat" lebih dulu. Sisanya di-invalidate
+      // supaya layar yang terbuka menahan data lama sampai data seed datang.
+      client.removeQueries({ queryKey: keys.leadRoot });
+      client.invalidateQueries();
       const i = data.inserted ?? {};
       toast.success(
         `Data demo dikembalikan: ${i.leads ?? 0} lead, ${i.activities ?? 0} activity, ${i.sales ?? 0} sales.`,
