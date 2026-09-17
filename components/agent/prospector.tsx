@@ -105,9 +105,10 @@ export function Prospector({ bootstrap }: { bootstrap?: Bootstrap }) {
         <div>
           <h2 className="text-sm font-semibold text-ink">Prospektor</h2>
           <p className="mt-0.5 text-xs leading-5 text-ink-soft">
-            Agen menelusuri kolam prospek penginapan, menyaring yang nomornya
-            sudah ada di CRM, lalu memberi skor. Hasilnya belum ditulis ke mana
-            pun sampai Anda menyetujuinya di antrian sebelah.
+            Agen menelusuri kolam prospek penginapan — daftar di luar CRM — lalu
+            menandai yang nomornya sudah terdaftar supaya tidak terpilih dua
+            kali, dan memberi skor. Hasilnya belum ditulis ke mana pun sampai
+            Anda menyetujuinya di antrian sebelah.
           </p>
         </div>
 
