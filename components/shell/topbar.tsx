@@ -13,8 +13,6 @@ const VIEWS = [
   { href: "/agent", label: "Agen AI" },
 ] as const;
 
-] as const;
-
 function DemoBadge() {
   const source = useCrmSource();
   if (source !== "mock") return null;
@@ -69,7 +67,6 @@ export function Topbar({ children }: { children?: React.ReactNode }) {
           {children}
           <ResetDialog />
         </div>
-        <div className="ml-auto flex items-center gap-2">{children}</div>
       </div>
     </header>
   );

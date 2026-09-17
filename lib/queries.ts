@@ -6,13 +6,10 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { toast } from "sonner";
-import * as crm from "@/lib/crm";
-import { CrmError } from "@/lib/crm";
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import * as crm from "@/lib/crm";
-import { crmSourceStore } from "@/lib/crm";
+import { CrmError, crmSourceStore } from "@/lib/crm";
 import type { DataOf, Lead, PayloadOf } from "@/lib/schema";
 
 export const keys = {
