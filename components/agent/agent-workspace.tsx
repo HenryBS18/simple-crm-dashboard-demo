@@ -30,7 +30,7 @@ export function AgentWorkspace() {
       </Topbar>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 border-t border-line lg:grid-cols-[1fr_24rem]">
-        <Prospector bootstrap={bootstrap.data} />
+        <Prospector />
         <ApprovalQueue />
       </div>
     </>
