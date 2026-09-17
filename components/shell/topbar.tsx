@@ -3,12 +3,16 @@
 import { cn } from "cn";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ResetDialog } from "@/components/shell/reset-dialog";
 import { useCrmSource } from "@/lib/queries";
 
 const VIEWS = [
   { href: "/", label: "Papan" },
   { href: "/leads", label: "Tabel" },
   { href: "/sales", label: "Sales" },
+  { href: "/agent", label: "Agen AI" },
+] as const;
+
 ] as const;
 
 function DemoBadge() {
@@ -61,6 +65,10 @@ export function Topbar({ children }: { children?: React.ReactNode }) {
           })}
         </nav>
 
+        <div className="ml-auto flex items-center gap-2">
+          {children}
+          <ResetDialog />
+        </div>
         <div className="ml-auto flex items-center gap-2">{children}</div>
       </div>
     </header>

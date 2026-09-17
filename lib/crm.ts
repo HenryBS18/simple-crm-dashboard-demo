@@ -115,6 +115,10 @@ export const moveLead = (payload: PayloadOf<"leads.move">) =>
 export const assignLead = (payload: PayloadOf<"leads.assign">) =>
   callCrm("leads.assign", payload);
 
+export const deleteLead = (id: string) => callCrm("leads.delete", { id });
+
+export const restoreLead = (id: string) => callCrm("leads.restore", { id });
+
 export const createActivity = (payload: PayloadOf<"activities.create">) =>
   callCrm("activities.create", payload);
 
@@ -124,3 +128,30 @@ export const upsertSales = (payload: PayloadOf<"sales.upsert">) =>
   callCrm("sales.upsert", payload);
 
 export const statsSummary = () => callCrm("stats.summary", {});
+
+/* ── Wrapper agen AI ─────────────────────────────────────────────────────── */
+
+export const aiBootstrap = () => callCrm("ai.bootstrap", {});
+
+export const searchProspects = (
+  payload: PayloadOf<"ai.prospect.search"> = {},
+) => callCrm("ai.prospect.search", payload);
+
+export const draftFollowup = (payload: PayloadOf<"ai.draft.followup">) =>
+  callCrm("ai.draft.followup", payload);
+
+export const listAiTasks = (payload: PayloadOf<"ai.tasks.list"> = {}) =>
+  callCrm("ai.tasks.list", payload);
+
+export const generateAiTasks = (payload: PayloadOf<"ai.tasks.generate"> = {}) =>
+  callCrm("ai.tasks.generate", payload);
+
+export const createAiTask = (payload: PayloadOf<"ai.tasks.create">) =>
+  callCrm("ai.tasks.create", payload);
+
+export const decideAiTask = (payload: PayloadOf<"ai.tasks.decide">) =>
+  callCrm("ai.tasks.decide", payload);
+
+/* ── Reset demo ──────────────────────────────────────────────────────────── */
+
+export const resetDemo = () => callCrm("demo.reset", { confirm: "RESET" });

@@ -2,6 +2,9 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import { cn } from "cn";
+import { useState } from "react";
+import { MoveMenu } from "@/components/board/move-menu";
+import { DeleteLeadDialog } from "@/components/lead/delete-lead-dialog";
 import { MoveMenu } from "@/components/board/move-menu";
 import { SegmentRail, SegmentTag } from "@/components/shell/segment-tag";
 import { StaleDot, StaleNote } from "@/components/shell/stale-mark";
@@ -80,6 +83,7 @@ export function LeadCard({
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, isDragging } =
     useDraggable({ id: lead.id, data: { stage: lead.stage } });
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <div
@@ -107,6 +111,19 @@ export function LeadCard({
           current={lead.stage}
           onMove={onMove}
           onOpenDetail={onOpenDetail}
+          onDelete={() => setConfirmDelete(true)}
+          leadName={lead.name}
+        />
+      </div>
+
+      {/* Di luar pegangan drag dan di luar menu — Radix meng-unmount isi menu
+          saat itemnya dipilih, dan dialognya mem-portal ke body jadi transform
+          drag tidak menyentuhnya. */}
+      <DeleteLeadDialog
+        lead={lead}
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+      />
           leadName={lead.name}
         />
       </div>

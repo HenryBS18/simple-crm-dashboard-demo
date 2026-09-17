@@ -65,6 +65,18 @@ export function useFilters() {
 }
 
 /**
+ * Reset demo menghapus lalu menyisipkan ulang seluruh baris, jadi dua param yang
+ * menunjuk ID tidak lagi menunjuk apa pun. `seg` dan `q` tetap sahih, jadi filter
+ * yang sedang dipasang saat presentasi tidak ikut hilang.
+ */
+export function dropIdParams(search: string): string {
+  const next = new URLSearchParams(search);
+  next.delete("lead");
+  next.delete("sales");
+  return next.toString();
+}
+
+/**
  * Filter dikerjakan di client atas satu hasil `leads.list`. Datanya belasan
  * baris; membuat request per filter cuma menambah latensi saat presentasi.
  */

@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+/* Dulu di lib/ai-rules.ts. Kernel aturannya kini hanya hidup di n8n; tiga
+   tipe ini tetap dibutuhkan untuk mengunci literal di ACTIONS. */
+export type AiTaskKind = "prospect_batch" | "followup" | "stage_move";
+export type AiTaskStatus = "pending" | "approved" | "rejected" | "failed";
+export type FollowupGoal =
+  | "perkenalan"
+  | "tindak_lanjut_penawaran"
+  | "repeat_order"
+  | "reaktivasi";
+
 /* ── Primitif toleran ──────────────────────────────────────────────────────
    n8n Data Table gampang mengembalikan angka/boolean sebagai string. Skema
    dibuat lenient supaya satu field yang bentuknya meleset tidak menjatuhkan
@@ -242,6 +252,320 @@ const statsSummaryData = z.object({
   unassignedCount: count,
 });
 
+/* ── Agen AI ───────────────────────────────────────────────────────────────
+   Daftar literalnya dikunci ke tipe `AiTaskKind`/`AiTaskStatus`/`FollowupGoal`
+   di atas lewat `satisfies`, jadi menambah goal atau jenis tugas tanpa
+   memperbarui skema ini akan gagal saat build, bukan diam-diam lolos ke
+   runtime.                                                                  */
+
+const aiTaskKinds = [
+  "prospect_batch",
+  "followup",
+  "stage_move",
+] as const satisfies readonly AiTaskKind[];
+export const aiTaskKindSchema = z.enum(aiTaskKinds);
+
+const aiTaskStatuses = [
+  "pending",
+  "approved",
+  "rejected",
+  "failed",
+] as const satisfies readonly AiTaskStatus[];
+export const aiTaskStatusSchema = z.enum(aiTaskStatuses);
+
+const followupGoals = [
+  "perkenalan",
+  "tindak_lanjut_penawaran",
+  "repeat_order",
+  "reaktivasi",
+] as const satisfies readonly FollowupGoal[];
+export const followupGoalSchema = z.enum(followupGoals);
+
+/** Payload dan hasil tugas disimpan sebagai JSON string di data table n8n,
+    jadi bentuknya dibiarkan longgar di sini dan dipersempit saat dibaca. */
+const loose = z.record(z.string(), z.unknown());
+
+const scorePartSchema = z.object({
+  key: text,
+  label: text,
+  points: count,
+  max: count,
+});
+
+/** Kategori dan area sengaja `text`, bukan enum: kolam prospek bisa tumbuh di
+    n8n tanpa menjatuhkan seluruh tabel hasil. Labelnya ikut dikirim. */
+export const prospectCandidateSchema = z.object({
+  prospectId: id,
+  name: text,
+  category: text,
+  categoryLabel: text,
+  area: text,
+  areaLabel: text,
+  address: text,
+  phone: text,
+  phoneRaw: text,
+  rating: count,
+  reviewCount: count,
+  unitCount: count,
+  unitLabel: text,
+  priceBand: text,
+  priceNote: text,
+  sourceLabel: text,
+  listingUrl: text,
+  hasWhatsapp: flag,
+  verified: flag,
+  lastSeenAt: text,
+  lastSeenLabel: text,
+  keywords: z.array(z.string()).catch([]),
+  notes: text,
+  score: count,
+  scoreTier: text,
+  scoreReason: text,
+  scoreParts: z.array(scorePartSchema).catch([]),
+  matchScore: count,
+  matchedOn: z.array(z.string()).catch([]),
+  status: text,
+  alreadyInCrm: flag,
+  existingLeadId: text,
+  leadDraft: z.object({
+    name: text,
+    phone: text,
+    address: text,
+    source: text,
+    notes: text,
+  }),
+});
+
+export const aiTaskSchema = z.object({
+  id,
+  kind: aiTaskKindSchema.catch("followup"),
+  status: aiTaskStatusSchema.catch("pending"),
+  title: text,
+  reason: text,
+  priority: count,
+  leadId: text,
+  leadName: text,
+  payload: loose.catch({}),
+  result: loose.nullable().catch(null),
+  dedupeKey: text,
+  runId: text,
+  actor: text,
+  createdAt: text,
+  decidedAt: text,
+  executedAt: text,
+});
+
+export const agentStepSchema = z.object({
+  key: text,
+  label: text,
+  detail: text,
+  count: z.coerce.number().nullable().catch(null),
+  ms: count,
+});
+
+/* Bentuk `task.payload` dan `task.result` per jenis. Dipakai untuk
+   mempersempit dua field longgar itu di komponen — bukan bagian dari envelope,
+   jadi tidak dipasang di ACTIONS. */
+
+/** Ringkasan prospek yang ikut disimpan n8n di `payload_json` tugas
+    `prospect_batch`. Tanpa ini kartu antrian cuma punya id, dan id tidak bisa
+    dinilai oleh orang yang menekan Setujui. */
+export const prospectBriefSchema = z.object({
+  id,
+  name: text,
+  area: text,
+  score: count,
+});
+
+export const prospectBatchPayloadSchema = z.object({
+  // Tugas lama hanya menyimpan id; yang baru menyimpan keduanya. Dua-duanya
+  // dibaca supaya penyaringan di prospektor tidak bolong untuk tugas lama.
+  prospectIds: z.array(z.string()).catch([]),
+  prospects: z.array(prospectBriefSchema).catch([]),
+});
+
+export const prospectBatchResultSchema = z.object({
+  kind: z.literal("prospect_batch"),
+  created: count,
+  duplicates: count,
+  // `invalid` dikirim n8n sebagai array, dan kontrak lama memaksanya jadi
+  // angka sehingga selalu terbaca 0. Di sini angkanya dan daftarnya dipisah.
+  invalid: count,
+  invalidItems: z
+    .array(z.object({ name: text, phone_raw: text, reason: text }))
+    .catch([]),
+  leads: z.array(leadSchema).catch([]),
+  duplicateLeads: z.array(leadSchema).catch([]),
+  categorizations: z
+    .array(z.object({ leadId: text, type: text, reason: text }))
+    .catch([]),
+  assignments: z
+    .array(
+      z.object({
+        leadId: text,
+        ownerId: text,
+        ownerName: text,
+        rule: text,
+      }),
+    )
+    .catch([]),
+  prospectIds: z.array(z.string()).catch([]),
+  convertedProspects: count,
+});
+
+export const followupResultSchema = z.object({
+  kind: z.literal("followup"),
+  activity: activitySchema,
+  lead: leadSchema,
+  waUrl: text,
+  text: text,
+});
+
+export const stageMoveResultSchema = z.object({
+  kind: z.literal("stage_move"),
+  lead: leadSchema,
+  activity: activitySchema,
+  from: text,
+  to: text,
+});
+
+const aiBootstrapData = z.object({
+  areas: z.array(z.object({ key: text, label: text, count })).catch([]),
+  categories: z.array(z.object({ key: text, label: text, count })).catch([]),
+  goals: z.array(z.object({ key: text, label: text })).catch([]),
+  taskKinds: z.array(z.object({ key: text, label: text })).catch([]),
+  templates: z.array(z.object({ id: text, goal: text, label: text })).catch([]),
+  pool: z.record(z.string(), count).catch({}),
+  tasks: z.record(z.string(), count).catch({}),
+  // Bobot dan ambang ikut dikirim supaya panel "cara skor dihitung" di UI
+  // tidak perlu menghardcode angka yang bisa berbeda dari backend.
+  scoring: z
+    .object({
+      weights: z.record(z.string(), count).catch({}),
+      tiers: z.array(z.object({ min: count, label: text })).catch([]),
+    })
+    .catch({ weights: {}, tiers: [] }),
+});
+
+const aiProspectSearchPayload = z.object({
+  query: z.string().optional(),
+  area: z.string().optional(),
+  category: z.string().optional(),
+  limit: z.number().optional(),
+  includeUsed: z.boolean().optional(),
+  minScore: z.number().optional(),
+});
+const aiProspectSearchData = z.object({
+  runId: text,
+  query: text,
+  filters: z.object({ area: text, category: text, minScore: count }),
+  total: count,
+  returned: count,
+  tookMs: count,
+  sources: z.array(z.object({ label: text, count })).catch([]),
+  steps: z.array(agentStepSchema).catch([]),
+  candidates: z.array(prospectCandidateSchema).catch([]),
+});
+
+const aiDraftFollowupPayload = z.object({
+  leadId: z.string(),
+  goal: followupGoalSchema.optional(),
+});
+const aiDraftFollowupData = z.object({
+  lead: leadSchema,
+  draft: z.object({
+    templateId: text,
+    goal: followupGoalSchema.catch("perkenalan"),
+    goalLabel: text,
+    channel: text,
+    text: text,
+    reason: text,
+    waUrl: text,
+    vars: loose.catch({}),
+  }),
+  alternatives: z.array(z.object({ goal: text, goalLabel: text })).catch([]),
+});
+
+const aiTasksListPayload = z.object({
+  status: aiTaskStatusSchema.optional(),
+  kind: aiTaskKindSchema.optional(),
+  leadId: z.string().optional(),
+  limit: z.number().optional(),
+});
+const aiTasksListData = z.object({
+  items: z.array(aiTaskSchema).catch([]),
+  total: count,
+  counts: z.record(z.string(), count).catch({}),
+});
+
+const aiTasksGeneratePayload = z.object({
+  kinds: z.array(aiTaskKindSchema).optional(),
+});
+const aiTasksGenerateData = z.object({
+  runId: text,
+  scanned: z.record(z.string(), count).catch({}),
+  created: count,
+  skipped: count,
+  items: z.array(aiTaskSchema).catch([]),
+  skippedReasons: z
+    .array(z.object({ dedupeKey: text, reason: text }))
+    .catch([]),
+});
+
+const aiTasksCreatePayload = z.object({
+  kind: aiTaskKindSchema,
+  leadId: z.string().optional(),
+  prospectIds: z.array(z.string()).optional(),
+  goal: followupGoalSchema.optional(),
+  text: z.string().optional(),
+  stage: stageSchema.optional(),
+  note: z.string().optional(),
+  actor: z.string().optional(),
+});
+/** Duplikat bukan error, sama seperti `leads.create`: tugas yang sudah
+    mengantri dikembalikan apa adanya dengan `duplicate: true`. */
+const aiTasksCreateData = z.object({
+  task: aiTaskSchema,
+  duplicate: flag,
+});
+
+const aiTasksDecidePayload = z.object({
+  id: z.string(),
+  decision: z.enum(["approve", "reject"]),
+  actor: z.string().optional(),
+  // Operator hampir selalu menyunting draf sebelum menyetujui. Tanpa ini,
+  // activity yang tercatat tidak sama dengan pesan yang benar-benar dikirim.
+  overrides: z
+    .object({
+      text: z.string().optional(),
+      stage: stageSchema.optional(),
+      prospectIds: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
+const aiTasksDecideData = z.object({
+  task: aiTaskSchema,
+  result: loose.nullable().catch(null),
+});
+
+/* ── Reset demo ──────────────────────────────────────────────────────────── */
+
+const demoResetPayload = z.object({ confirm: z.literal("RESET") });
+
+const demoResetCounts = z.object({
+  leads: z.coerce.number().catch(0),
+  activities: z.coerce.number().catch(0),
+  sales: z.coerce.number().catch(0),
+  prospects: z.coerce.number().catch(0),
+  aiTasks: z.coerce.number().catch(0),
+});
+
+const demoResetData = z.object({
+  seededAt: text,
+  deleted: demoResetCounts,
+  inserted: demoResetCounts.partial().catch({}),
+});
+
 /* Satu peta yang mengunci tipe payload dan tipe data untuk setiap action.
    callCrm dan seluruh wrapper di lib/crm.ts diketik dari sini. */
 export const ACTIONS = {
@@ -256,6 +580,10 @@ export const ACTIONS = {
   "leads.update": { payload: leadsUpdatePayload, data: leadWithActivityData },
   "leads.move": { payload: leadsMovePayload, data: leadWithActivityData },
   "leads.assign": { payload: leadsAssignPayload, data: leadsAssignData },
+  // Hapus lead itu soft delete: barisnya diarsipkan, bukan dibuang. Kontrak
+  // `Lead` sengaja tidak berubah — penanda arsipnya disaring di sisi n8n.
+  "leads.delete": { payload: leadsGetPayload, data: leadWithActivityData },
+  "leads.restore": { payload: leadsGetPayload, data: leadWithActivityData },
   "activities.create": {
     payload: activitiesCreatePayload,
     data: activitiesCreateData,
@@ -263,6 +591,28 @@ export const ACTIONS = {
   "sales.list": { payload: empty, data: salesListData },
   "sales.upsert": { payload: salesDraftSchema, data: salesUpsertData },
   "stats.summary": { payload: empty, data: statsSummaryData },
+  /* Action agen dilayani gateway n8n kedua (`CRM AI Gateway`). Prefiks `ai.`
+     yang dipakai `lib/n8n.ts` untuk memilih URL — jangan dipakai untuk action
+     yang dilayani gateway lama. */
+  "ai.bootstrap": { payload: empty, data: aiBootstrapData },
+  "ai.prospect.search": {
+    payload: aiProspectSearchPayload,
+    data: aiProspectSearchData,
+  },
+  "ai.draft.followup": {
+    payload: aiDraftFollowupPayload,
+    data: aiDraftFollowupData,
+  },
+  "ai.tasks.list": { payload: aiTasksListPayload, data: aiTasksListData },
+  "ai.tasks.generate": {
+    payload: aiTasksGeneratePayload,
+    data: aiTasksGenerateData,
+  },
+  "ai.tasks.create": { payload: aiTasksCreatePayload, data: aiTasksCreateData },
+  "ai.tasks.decide": { payload: aiTasksDecidePayload, data: aiTasksDecideData },
+  /* Action reset dilayani gateway n8n ketiga (`CRM Demo Reset`). Prefiks
+     `demo.` yang dipakai `lib/n8n.ts` untuk memilih URL. */
+  "demo.reset": { payload: demoResetPayload, data: demoResetData },
 } as const;
 
 export type CrmAction = keyof typeof ACTIONS;
@@ -284,3 +634,11 @@ export const requestSchema = z.object({
 
 export type Categorization = z.infer<typeof categorizationSchema>;
 export type Assignment = z.infer<typeof assignmentSchema>;
+
+export type ProspectBrief = z.infer<typeof prospectBriefSchema>;
+export type ProspectCandidate = z.infer<typeof prospectCandidateSchema>;
+export type AiTask = z.infer<typeof aiTaskSchema>;
+export type AgentStep = z.infer<typeof agentStepSchema>;
+export type ProspectBatchResult = z.infer<typeof prospectBatchResultSchema>;
+export type FollowupResult = z.infer<typeof followupResultSchema>;
+export type StageMoveResult = z.infer<typeof stageMoveResultSchema>;

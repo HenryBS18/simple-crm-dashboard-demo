@@ -1,6 +1,15 @@
 "use client";
 
 import { cn } from "cn";
+import { Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ActivityTimeline } from "@/components/lead/activity-timeline";
+import { ContactBlock } from "@/components/lead/contact-block";
+import { DeleteLeadDialog } from "@/components/lead/delete-lead-dialog";
+import { NoteComposer } from "@/components/lead/note-composer";
+import { SegmentTag } from "@/components/shell/segment-tag";
+import { StaleDot } from "@/components/shell/stale-mark";
+import { Button } from "@/components/ui/button";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { ActivityTimeline } from "@/components/lead/activity-timeline";
@@ -28,6 +37,11 @@ import { resolveStages, STAGE_LABELS } from "@/lib/stage";
 
 export function LeadDetail({
   leadId,
+  onDeleted,
+}: {
+  leadId: string;
+  /** Drawer harus menyingkir sendiri setelah lead-nya dihapus. */
+  onDeleted?: () => void;
   showPageLink = true,
 }: {
   leadId: string;
@@ -37,6 +51,7 @@ export function LeadDetail({
   const bootstrapQuery = useBootstrap();
   const move = useMoveLead();
   const assign = useAssignLead();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const stages = resolveStages(bootstrapQuery.data?.stages);
   const sales = bootstrapQuery.data?.sales ?? [];
@@ -69,6 +84,7 @@ export function LeadDetail({
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Identitas */}
       <div className="px-5 pb-4 pt-1">
+        <div className="flex items-start gap-2">
         <div className={cn("flex items-start gap-2", showPageLink && "pr-7")}>
           {lead.is_stale ? <StaleDot className="mt-3" /> : null}
           <h1 className="min-w-0 flex-1 text-xl font-semibold leading-7 tracking-tight text-ink">
@@ -187,6 +203,27 @@ export function LeadDetail({
           <NoteComposer leadId={lead.id} actor={lead.owner_name} />
           <ActivityTimeline activities={data.activities} />
         </div>
+
+        {/* Aksi merusak ditaruh paling bawah, jauh dari tombol sehari-hari. */}
+        <div className="border-t border-line pt-4">
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 aria-hidden />
+            Hapus lead
+          </Button>
+        </div>
+      </div>
+
+      <DeleteLeadDialog
+        lead={lead}
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        onDeleted={onDeleted}
+      />
       </div>
     </div>
   );

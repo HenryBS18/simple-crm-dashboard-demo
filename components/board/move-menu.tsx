@@ -12,6 +12,13 @@ import {
 import type { Stage, StageInfo } from "@/lib/schema";
 
 /**
+ * Menu aksi kartu. Jalur pindah tanpa drag wajib ada: drag di trackpad saat
+ * presentasi gampang meleset, dan di layar sempit drag praktis tidak terpakai.
+ *
+ * `onDelete` tidak menghapus apa pun sendiri — dia membuka `DeleteLeadDialog`
+ * yang sama dengan panel detail. Nama lead-nya terbaca dulu di dialog itu,
+ * karena satu titik tiga yang salah tekan tidak boleh langsung menghilangkan
+ * kartu. Toast Urungkan sesudahnya adalah lapis kedua, bukan satu-satunya.
  * Jalur pindah tanpa drag. Wajib ada: drag di trackpad saat presentasi
  * gampang meleset, dan di layar sempit drag praktis tidak terpakai.
  */
@@ -20,12 +27,14 @@ export function MoveMenu({
   current,
   onMove,
   onOpenDetail,
+  onDelete,
   leadName,
 }: {
   stages: StageInfo[];
   current: Stage;
   onMove: (stage: Stage) => void;
   onOpenDetail: () => void;
+  onDelete: () => void;
   leadName: string;
 }) {
   return (
@@ -53,6 +62,10 @@ export function MoveMenu({
             {stage.label}
           </DropdownMenuItem>
         ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+          Hapus lead
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
